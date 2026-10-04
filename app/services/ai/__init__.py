@@ -16,6 +16,7 @@ from app.services.ai.base import (
     AIServiceUnavailableError,
     AITimeoutError,
     AINetworkError,
+    AIInvalidResponseError,
 )
 from app.services.ai.manager import (
     AIProviderManager,

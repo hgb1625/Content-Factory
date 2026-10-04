@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pathlib import Path
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List
 from dotenv import load_dotenv, set_key
 
 from app.database import get_db, BASE_DIR, TEMP_DIR

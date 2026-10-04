@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 
 from app.database import init_db, BASE_DIR, LOGS_DIR, DOWNLOADS_DIR, TEMP_DIR
-from app.routes import dashboard, research, videos, voice, content, publishing, settings, auto_edit
+from app.routes import dashboard, research, videos, voice, content, publishing, settings, auto_edit, pipeline
 
 # Ensure .env is loaded
 load_dotenv(dotenv_path=BASE_DIR / ".env")
@@ -97,6 +97,7 @@ app.include_router(auto_edit.router)
 app.include_router(content.router)
 app.include_router(publishing.router)
 app.include_router(settings.router)
+app.include_router(pipeline.router)
 
 
 @app.get("/health")

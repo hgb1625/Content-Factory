@@ -71,6 +71,15 @@ def normalize_niche(niche: str) -> str:
     return re.sub(r"\s+", " ", niche.strip().lower())
 
 
+def normalize_product_name(name: str) -> str:
+    """Deterministic local normalization for product names (lowercase, stripped punctuation, collapsed whitespace)."""
+    if not name:
+        return ""
+    norm = name.strip().lower()
+    norm = re.sub(r"[^\w\s]", "", norm)
+    return re.sub(r"\s+", " ", norm).strip()
+
+
 def get_cached_products_for_niche(db: Session, niche: str) -> List[Product]:
     """Retrieve existing products matching normalized niche without calling AI."""
     norm = normalize_niche(niche)
@@ -191,18 +200,42 @@ def run_research(
         if not products_data:
             raise ValueError("Không có sản phẩm nào được tạo ra.")
 
-        # Existing products for this niche to prevent duplicate product names
+        # Collect unique products within the generated batch using normalized names
+        seen_batch_names = set()
+        unique_batch_products = []
+        for p in products_data:
+            p_name = p.get("name_vietnamese", "").strip()
+            norm_name = normalize_product_name(p_name)
+            if not norm_name or norm_name in seen_batch_names:
+                continue
+            seen_batch_names.add(norm_name)
+            unique_batch_products.append(p)
+
+        # Enforce exact count invariant: fail if unique valid count is less than requested
+        if len(unique_batch_products) < valid_count:
+            prov_info = _get_research_provider_info(db)
+            raise AIInvalidResponseError(
+                f"Phản hồi AI chỉ có {len(unique_batch_products)}/{valid_count} sản phẩm duy nhất hợp lệ (phát hiện tên trùng lặp hoặc thiếu sản phẩm). "
+                f"Hệ thống dừng lại và không lưu bản ghi nào để bảo đảm dữ liệu.",
+                provider=prov_info.get("provider_id", "unknown")
+            )
+
+        if len(unique_batch_products) > valid_count:
+            unique_batch_products = unique_batch_products[:valid_count]
+
+        # Existing products in DB for this niche
         existing_names = {
-            p.name_vietnamese.strip().lower()
+            normalize_product_name(p.name_vietnamese)
             for p in db.query(Product).all()
             if normalize_niche(p.niche) == norm_niche
         }
 
         created_products = []
-        for p in products_data:
+        for p in unique_batch_products:
             p_name = p.get("name_vietnamese", "").strip()
-            # If not fresh, deduplicate against existing names in this niche
-            if p_name.lower() in existing_names and not fresh:
+            norm_name = normalize_product_name(p_name)
+            # Do not allow fresh=True to bypass duplicate-product protection
+            if norm_name in existing_names:
                 continue
 
             pid = get_next_product_id(db)
@@ -219,10 +252,10 @@ def run_research(
             db.add(prod)
             db.flush()
             created_products.append(prod)
-            existing_names.add(p_name.lower())
+            existing_names.add(norm_name)
 
         db.commit()
-        count_saved = len(created_products) if created_products else len(products_data)
+        count_saved = len(created_products) if created_products else len(unique_batch_products)
         return RedirectResponse(
             url=f"/products?success=1&count={count_saved}&niche={niche_clean}",
             status_code=303

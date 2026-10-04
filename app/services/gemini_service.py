@@ -35,6 +35,8 @@ from app.services.ai.base import (
     AIServiceUnavailableError,
     AITimeoutError,
     AINetworkError,
+    AIInvalidResponseError,
+    hydrate_research_product,
     get_research_max_output_tokens,
     get_research_timeout,
 )
@@ -208,12 +210,14 @@ def select_fallback_model(primary_model: str, api_key: str) -> Optional[str]:
 
 def get_api_key(db: Optional[Session] = None) -> str:
     """Retrieve the Gemini API key from single source of truth."""
-    return get_gemini_api_key(db)
+    import app.config as cfg
+    return cfg.get_gemini_api_key(db)
 
 
 def get_model_name(db: Optional[Session] = None) -> str:
     """Retrieve the Gemini Model name from single source of truth (default: gemini-3.8-flash)."""
-    return get_gemini_model(db)
+    import app.config as cfg
+    return cfg.get_gemini_model(db)
 
 
 def clean_json_response(raw_text: str) -> str:
@@ -933,31 +937,34 @@ class GeminiService:
     ) -> List[Dict[str, Any]]:
         """
         Batch Product Research: Generate N products in exactly ONE Gemini request.
-        Validates output locally in Python.
+        Strict Low-Consumption Mode: max_retries=0, enable_fallback=False.
+        Enforces Exact N contract:
+        - If >= count valid products: deterministically trim to exactly count.
+        - If < count valid products: raise AIInvalidResponseError (under-generation, 0 saved).
         """
         prompt = f"""You are an expert e-commerce and viral short-video researcher for Douyin (TikTok China).
 Target Niche: {niche}
 Generate a JSON list of exactly {count} trending, problem-solving, or viral products for this niche.
 
 CRITICAL REQUIREMENTS FOR EACH PRODUCT:
-1. "name_vietnamese": Clear commercial Vietnamese product name.
-2. "name_chinese": Natural commercial Chinese supplier/product name used on 1688 and Chinese wholesale markets.
-3. "douyin_keywords": 3–5 authentic Chinese Douyin search terms/phrases specifically used by creators to showcase this product (e.g. '神器', '好物推荐', '开箱', '测评', and key feature keywords).
-4. "content_angle": 1 concise Vietnamese sentence (approximately 10–15 words) explaining the unique viral marketing angle.
-5. "hook": 1 short punchy Vietnamese opening sentence (under 15 words) to grab viewer attention in the first 3 seconds.
+- "nv": Clear commercial Vietnamese product name.
+- "nc": Natural commercial Chinese supplier/product name used on 1688 and Chinese wholesale markets.
+- "dk": 3–4 authentic Chinese Douyin search phrases/terms (e.g. '神器', '好物推荐', '开箱', '测评', and key feature keywords).
+- "ca": 1 concise Vietnamese marketing angle, approximately 8–12 words.
+- "h": 1 short punchy Vietnamese opening hook, under 12 words.
 
 OUTPUT FORMAT:
 Return ONLY the raw JSON array. The response must start with [ and end with ], containing exactly {count} product objects.
-No markdown fences (do not wrap in ```json), no introduction, no conclusion, and no explanation outside JSON.
+Use compact JSON if possible. No markdown fences (do not wrap in ```json), no introduction, no conclusion, and no explanation outside JSON.
 
 Example structure:
 [
   {{
-    "name_vietnamese": "Nồi cơm điện mini đa năng",
-    "name_chinese": "多功能迷你电饭煲",
-    "douyin_keywords": "宿舍迷你电饭煲 独居一人食 煮饭神器",
-    "content_angle": "Giải pháp nấu ăn tiện lợi nhanh gọn cho người sống một mình",
-    "hook": "Đừng mua nồi cơm to nữa nếu bạn sống một mình hoặc ở trọ!"
+    "nv": "Nồi cơm điện mini đa năng",
+    "nc": "多功能迷你电饭煲",
+    "dk": "宿舍迷你电饭煲 独居一人食 煮饭神器",
+    "ca": "Giải pháp nấu ăn tiện lợi nhanh gọn cho người sống một mình",
+    "h": "Đừng mua nồi cơm to nữa nếu bạn sống một mình hoặc ở trọ!"
   }}
 ]
 """
@@ -984,22 +991,29 @@ Example structure:
         # Validate schema of items locally in Python (zero AI calls)
         valid_items = []
         for it in items:
-            if not isinstance(it, dict):
-                continue
-            name_vi = str(it.get("name_vietnamese", "")).strip()
-            if not name_vi:
-                continue
-            valid_items.append({
-                "name_vietnamese": name_vi,
-                "name_chinese": str(it.get("name_chinese", "")).strip(),
-                "douyin_keywords": str(it.get("douyin_keywords", "")).strip(),
-                "content_angle": str(it.get("content_angle", "")).strip(),
-                "hook": str(it.get("hook", "")).strip(),
-            })
+            hydrated = hydrate_research_product(it)
+            if hydrated:
+                valid_items.append(hydrated)
 
         if not valid_items:
             raise ValueError("Không có sản phẩm hợp lệ nào được tìm thấy trong phản hồi của AI.")
 
+        if count >= 30 and len(valid_items) < count:
+            raise AIInvalidResponseError(
+                f"Gemini chỉ trả về {len(valid_items)}/{count} sản phẩm được yêu cầu (thiếu dữ liệu). "
+                f"Yêu cầu dừng lại để đảm bảo tính toàn vẹn dữ liệu.",
+                provider="gemini"
+            )
+
+        if len(valid_items) > count:
+            logger.info(
+                f"Research requested {count} products, Gemini returned {len(valid_items)} valid products; "
+                f"locally trimmed to {count}."
+            )
+            valid_items = valid_items[:count]
+
+        if count >= 30:
+            assert len(valid_items) == count
         return valid_items
 
     def generate_timed_script(

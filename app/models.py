@@ -36,6 +36,9 @@ class Video(Base):
     approved = Column(Boolean, default=False)
     used = Column(Boolean, default=False)
     status = Column(String(64), default="FOUND", index=True)
+    provider = Column(String(64), default="douyin", index=True)
+    canonical_source_id = Column(String(255), nullable=True, index=True)
+    media_hash = Column(String(64), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     notes = Column(Text, nullable=True)
 

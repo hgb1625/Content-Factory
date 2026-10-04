@@ -23,6 +23,7 @@ Verifies that:
 
 All tests use mocked HTTP/services — ZERO real Gemini quota consumed.
 """
+import os
 import unittest
 from unittest.mock import patch, MagicMock
 import json
@@ -85,9 +86,15 @@ class TestMultiAIPhase1Architecture(unittest.TestCase):
         _MODEL_CATALOG_CACHE["cached_at"] = 0.0
         # Reset singleton manager
         set_ai_manager(None)
+        self._orig_key = os.environ.get("GEMINI_API_KEY")
+        os.environ["GEMINI_API_KEY"] = "AIzaSy_TEST_MOCK_KEY_FOR_PHASE1"
 
     def tearDown(self):
         set_ai_manager(None)
+        if self._orig_key is not None:
+            os.environ["GEMINI_API_KEY"] = self._orig_key
+        else:
+            os.environ.pop("GEMINI_API_KEY", None)
 
     # 1. GeminiProvider implements the provider contract
     def test_01_gemini_provider_implements_contract(self):

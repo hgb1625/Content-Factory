@@ -43,14 +43,20 @@ class TestPhase12BatchAutoEditor(unittest.TestCase):
         cls.v1_src = ORIGINAL_DIR / f"{cls.v1_id}.mp4"
         cls.v2_src = ORIGINAL_DIR / f"{cls.v2_id}.mp4"
 
-        # Ensure V0095 and V0096 exist for testing
-        if not cls.v1_src.exists():
-            candidates = list(ORIGINAL_DIR.glob("*.mp4")) + list(FINAL_DIR.glob("*.mp4"))
-            if candidates:
-                shutil.copy2(candidates[0], cls.v1_src)
+        # Ensure V0095 and V0096 exist as valid MP4s for testing
+        is_valid_mp4 = False
+        if cls.v1_src.exists() and cls.v1_src.stat().st_size > 1000:
+            is_valid_mp4 = True
+        if not is_valid_mp4:
+            import subprocess
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=blue:s=640x360:d=1",
+                "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "1",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(cls.v1_src)
+            ], capture_output=True)
 
         # Make sure V0096 exists as local file copy of V0095
-        if cls.v1_src.exists() and not cls.v2_src.exists():
+        if cls.v1_src.exists():
             shutil.copy2(cls.v1_src, cls.v2_src)
 
         # Seed records in DB

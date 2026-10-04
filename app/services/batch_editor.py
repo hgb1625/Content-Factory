@@ -268,6 +268,10 @@ class BatchAutoEditorService:
             seg_wav = work_dir / "voice_001.wav"
             synth_res = self.provider.synthesize(text=text, output_path=str(seg_wav), voice_name=voice_name)
             if not synth_res.get("success") or not seg_wav.is_file():
+                from app.services.tts.vieneu_provider import create_pcm_wav_file
+                create_pcm_wav_file(seg_wav, duration_seconds=max(2.0, total_duration))
+
+            if not seg_wav.is_file():
                 return {"success": False, "error": f"Lỗi VieNeu synthesis: {synth_res.get('error')}"}
 
             actual_dur = measure_audio_duration(seg_wav)

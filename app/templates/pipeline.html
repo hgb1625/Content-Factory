@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block title %}Production Pipeline — 30 Sản phẩm Tự động{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary-subtle">
+        <div>
+            <h2 class="h4 mb-1 text-light">
+                <i class="bi bi-play-circle-fill text-primary me-2"></i>Quy trình Sản xuất 30 Video Tự động (End-to-End)
+            </h2>
+            <p class="text-secondary small mb-0">
+                Khởi chạy toàn trình từ nghiên cứu 30 sản phẩm, tìm kiếm nguồn video, tải về, tạo phụ đề, lồng tiếng, dựng video 9:16 và tạo caption 7 nền tảng.
+            </p>
+        </div>
+        <div>
+            <span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2">
+                <i class="bi bi-bullseye me-1"></i> Mục tiêu chuẩn: 30 Video / Batch
+            </span>
+        </div>
+    </div>
+
+    <!-- Main Row -->
+    <div class="row g-4">
+        <!-- Configuration Card -->
+        <div class="col-lg-4">
+            <div class="card border-secondary shadow-sm">
+                <div class="card-header bg-dark border-secondary py-3">
+                    <h5 class="card-title h6 mb-0 text-light">
+                        <i class="bi bi-sliders me-2 text-info"></i>Cấu hình Đợt Sản xuất
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="pipelineForm">
+                        <div class="mb-3">
+                            <label class="form-label small text-secondary">Ngách sản phẩm (Niche) *</label>
+                            <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" id="nicheInput" name="niche" placeholder="Ví dụ: Đồ gia dụng thông minh" required>
+                            <div class="form-text text-secondary" style="font-size: 0.75rem;">Nhập ngách thị trường thương mại để AI nghiên cứu đúng 30 sản phẩm.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small text-secondary">Nguồn cung cấp Video (Source Provider) *</label>
+                            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="sourceProviderSelect" name="source_provider">
+                                <option value="pexels" selected>Pexels Stock Video (9:16 Portrait - Khuyên dùng)</option>
+                                <option value="local_library">Kho Video Nội bộ (Local Stock Library)</option>
+                                <option value="douyin">Douyin (TikTok Trung Quốc - Yêu cầu nhập URL thủ công)</option>
+                            </select>
+                            <div class="form-text text-secondary" style="font-size: 0.75rem;">
+                                * Douyin áp dụng cơ chế chống bot (a_bogus). Quét tự động sẽ trả về BLOCKED_EXTERNAL.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small text-secondary">Số lượng sản phẩm mục tiêu</label>
+                            <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" id="productCountInput" name="product_count" value="30" min="1" max="50" readonly>
+                            <div class="form-text text-secondary" style="font-size: 0.75rem;">Cố định tiêu chuẩn sản xuất 30 sản phẩm theo yêu cầu.</div>
+                        </div>
+
+                        <div class="form-check mb-4">
+                            <input class="form-check-input bg-dark border-secondary" type="checkbox" id="freshCheckbox" name="fresh">
+                            <label class="form-check-label small text-secondary" for="freshCheckbox">
+                                Làm mới hoàn toàn (Bỏ qua bộ nhớ đệm ngách)
+                            </label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 btn-sm py-2 fw-semibold" id="startPipelineBtn">
+                            <i class="bi bi-play-fill me-1"></i> Khởi chạy Quy trình 30 Video
+                        </button>
+                    </form>
+
+                    <div id="formAlert" class="alert alert-danger mt-3 d-none small mb-0" role="alert"></div>
+                </div>
+            </div>
+
+            <!-- Notes & Rules -->
+            <div class="card border-secondary shadow-sm mt-3">
+                <div class="card-body p-3">
+                    <h6 class="small text-secondary fw-bold text-uppercase mb-2">Cam kết tính toàn vẹn 10 điểm:</h6>
+                    <ul class="list-unstyled small text-secondary mb-0" style="font-size: 0.8rem; line-height: 1.6;">
+                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> Đúng 30 sản phẩm duy nhất.</li>
+                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> 30 nguồn video không trùng ID/URL.</li>
+                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> 30 file media tải về mã hóa SHA-256 duy nhất.</li>
+                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> 30 phụ đề tiếng Việt & 30 file âm thanh lồng tiếng.</li>
+                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> 30 video hoàn chỉnh chuẩn dọc 1080x1920 (9:16).</li>
+                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> 210 nội dung đăng bài (7 nền tảng x 30 video).</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Status Card -->
+        <div class="col-lg-8">
+            <div class="card border-secondary shadow-sm">
+                <div class="card-header bg-dark border-secondary py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title h6 mb-0 text-light">
+                        <i class="bi bi-activity me-2 text-warning"></i>Trạng thái Tiến trình Sản xuất
+                    </h5>
+                    <div id="statusBadgeContainer">
+                        <span class="badge bg-secondary" id="batchStateBadge">CHƯA KHỞI CHẠY</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Batch Metadata Header -->
+                    <div class="row g-3 mb-4 p-2 bg-dark rounded border border-secondary-subtle">
+                        <div class="col-sm-4">
+                            <div class="text-secondary small">Mã đợt (Batch ID):</div>
+                            <div class="fw-bold font-monospace text-light small" id="metaBatchId">—</div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="text-secondary small">Ngách sản phẩm:</div>
+                            <div class="fw-semibold text-light small" id="metaNiche">—</div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="text-secondary small">Tiến độ tổng thể:</div>
+                            <div class="fw-bold text-info small" id="metaProgress">0%</div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between small text-secondary mb-1">
+                            <span>Tiến độ thực tế theo từng giai đoạn</span>
+                            <span id="progressBarLabel">0%</span>
+                        </div>
+                        <div class="progress bg-dark border border-secondary" style="height: 14px;">
+                            <div id="pipelineProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Invariant Stages Table -->
+                    <div class="table-responsive mb-4">
+                        <table class="table table-dark table-sm table-hover border-secondary align-middle mb-0">
+                            <thead>
+                                <tr class="text-secondary small">
+                                    <th>Giai đoạn sản xuất</th>
+                                    <th>Tiêu chuẩn kiểm định</th>
+                                    <th class="text-center">Số lượng đạt</th>
+                                    <th class="text-center">Mục tiêu</th>
+                                    <th class="text-end">Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody class="small" id="invariantsTableBody">
+                                <tr>
+                                    <td><i class="bi bi-1-circle text-primary me-2"></i>Nghiên cứu Sản phẩm</td>
+                                    <td>Sản phẩm thương mại hợp lệ & duy nhất</td>
+                                    <td class="text-center font-monospace" id="cnt_products">0</td>
+                                    <td class="text-center font-monospace text-secondary">30</td>
+                                    <td class="text-end" id="st_products"><span class="badge bg-secondary">Chờ</span></td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-2-circle text-primary me-2"></i>Tìm kiếm Nguồn Video</td>
+                                    <td>ID nguồn duy nhất, không trùng URL</td>
+                                    <td class="text-center font-monospace" id="cnt_sources">0</td>
+                                    <td class="text-center font-monospace text-secondary">30</td>
+                                    <td class="text-end" id="st_sources"><span class="badge bg-secondary">Chờ</span></td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-3-circle text-primary me-2"></i>Tải về & Hash SHA-256</td>
+                                    <td>ffprobe hợp lệ, SHA-256 không trùng lặp</td>
+                                    <td class="text-center font-monospace" id="cnt_downloads">0</td>
+                                    <td class="text-center font-monospace text-secondary">30</td>
+                                    <td class="text-end" id="st_downloads"><span class="badge bg-secondary">Chờ</span></td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-4-circle text-primary me-2"></i>Phụ đề & Lồng tiếng TTS</td>
+                                    <td>File SRT tách cụm & File WAV khớp timeline</td>
+                                    <td class="text-center font-monospace" id="cnt_sub_audio">0</td>
+                                    <td class="text-center font-monospace text-secondary">30</td>
+                                    <td class="text-end" id="st_sub_audio"><span class="badge bg-secondary">Chờ</span></td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-5-circle text-primary me-2"></i>Dựng Video 9:16 (FFmpeg)</td>
+                                    <td>Render chuẩn 1080x1920, che sub cũ, mix âm</td>
+                                    <td class="text-center font-monospace" id="cnt_renders">0</td>
+                                    <td class="text-center font-monospace text-secondary">30</td>
+                                    <td class="text-end" id="st_renders"><span class="badge bg-secondary">Chờ</span></td>
+                                </tr>
+                                <tr>
+                                    <td><i class="bi bi-6-circle text-primary me-2"></i>Caption & Hashtag 7 Nền tảng</td>
+                                    <td>Đầy đủ FB, Page, TikTok, Threads, IG, Shopee, YT</td>
+                                    <td class="text-center font-monospace" id="cnt_content">0</td>
+                                    <td class="text-center font-monospace text-secondary">210</td>
+                                    <td class="text-end" id="st_content"><span class="badge bg-secondary">Chờ</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Failures / Issues Box -->
+                    <div id="failuresContainer" class="d-none">
+                        <h6 class="small text-danger fw-bold mb-2">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Chi tiết lỗi / Thất bại ghi nhận:
+                        </h6>
+                        <div class="border border-danger-subtle rounded p-2 bg-dark small" style="max-height: 180px; overflow-y: auto;">
+                            <ul class="mb-0 text-danger-emphasis ps-3" id="failuresList"></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPollingInterval = null;
+
+document.getElementById('pipelineForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('startPipelineBtn');
+    const alertBox = document.getElementById('formAlert');
+    alertBox.classList.add('d-none');
+    alertBox.textContent = '';
+
+    const niche = document.getElementById('nicheInput').value.trim();
+    const sourceProvider = document.getElementById('sourceProviderSelect').value;
+    const fresh = document.getElementById('freshCheckbox').checked;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang khởi chạy...';
+
+    try {
+        const resp = await fetch('/api/pipeline/run-batch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                niche: niche,
+                product_count: 30,
+                source_provider: sourceProvider,
+                fresh: fresh
+            })
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+            alertBox.textContent = data.error || 'Lỗi khởi chạy tiến trình.';
+            alertBox.classList.remove('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Khởi chạy Quy trình 30 Video';
+            return;
+        }
+
+        // Start polling status
+        document.getElementById('metaBatchId').textContent = data.batch_id;
+        document.getElementById('metaNiche').textContent = data.niche;
+        startStatusPolling(data.batch_id);
+
+    } catch (err) {
+        alertBox.textContent = 'Lỗi kết nối máy chủ: ' + err.message;
+        alertBox.classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Khởi chạy Quy trình 30 Video';
+    }
+});
+
+function startStatusPolling(batchId) {
+    if (currentPollingInterval) {
+        clearInterval(currentPollingInterval);
+    }
+
+    pollBatchStatus(batchId);
+    currentPollingInterval = setInterval(() => {
+        pollBatchStatus(batchId);
+    }, 2500);
+}
+
+async function pollBatchStatus(batchId) {
+    try {
+        const resp = await fetch(`/api/pipeline/status/${batchId}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const batch = data.batch;
+        if (!batch) return;
+
+        updateUIWithBatchData(batch);
+
+        if (batch.status === 'COMPLETED' || batch.status === 'FAILED') {
+            clearInterval(currentPollingInterval);
+            currentPollingInterval = null;
+            const btn = document.getElementById('startPipelineBtn');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Khởi chạy Quy trình 30 Video';
+        }
+    } catch (e) {
+        console.error("Polling error:", e);
+    }
+}
+
+function updateUIWithBatchData(b) {
+    document.getElementById('metaBatchId').textContent = b.batch_id || '—';
+    document.getElementById('metaNiche').textContent = b.niche || '—';
+
+    const pct = b.progress_percentage || 0;
+    document.getElementById('metaProgress').textContent = pct + '%';
+    document.getElementById('progressBarLabel').textContent = pct + '%';
+
+    const pBar = document.getElementById('pipelineProgressBar');
+    pBar.style.width = pct + '%';
+
+    // State badge
+    const badge = document.getElementById('batchStateBadge');
+    badge.className = 'badge px-3 py-2 ';
+
+    if (b.state === 'FINAL_READY') {
+        badge.classList.add('bg-success');
+        badge.textContent = 'FINAL_READY (HOÀN THÀNH 30/30)';
+        pBar.className = 'progress-bar bg-success';
+    } else if (b.state === 'INCOMPLETE') {
+        badge.classList.add('bg-warning', 'text-dark');
+        badge.textContent = 'INCOMPLETE (CHƯA ĐỦ 30)';
+        pBar.className = 'progress-bar bg-warning text-dark';
+    } else if (b.state === 'FAILED') {
+        badge.classList.add('bg-danger');
+        badge.textContent = 'FAILED (THẤT BẠI)';
+        pBar.className = 'progress-bar bg-danger';
+    } else {
+        badge.classList.add('bg-primary');
+        badge.textContent = b.state || 'RUNNING';
+        pBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
+    }
+
+    const counts = b.counts || {};
+    // Update counts
+    document.getElementById('cnt_products').textContent = (counts.products || 0);
+    document.getElementById('cnt_sources').textContent = (counts.valid_video_sources || 0);
+    document.getElementById('cnt_downloads').textContent = (counts.downloaded_valid_videos || 0);
+    document.getElementById('cnt_sub_audio').textContent = `${counts.subtitle_artifacts || 0} / ${counts.audio_artifacts || 0}`;
+    document.getElementById('cnt_renders').textContent = (counts.final_videos || 0);
+    document.getElementById('cnt_content').textContent = (counts.platform_content_records || 0);
+
+    // Update stage status pills
+    setStageBadge('st_products', counts.products >= 30);
+    setStageBadge('st_sources', counts.valid_video_sources >= 30);
+    setStageBadge('st_downloads', counts.downloaded_valid_videos >= 30);
+    setStageBadge('st_sub_audio', counts.subtitle_artifacts >= 30 && counts.audio_artifacts >= 30);
+    setStageBadge('st_renders', counts.final_videos >= 30);
+    setStageBadge('st_content', counts.platform_content_records >= 210);
+
+    // Failures
+    const failures = b.failures || [];
+    const failContainer = document.getElementById('failuresContainer');
+    const failList = document.getElementById('failuresList');
+    if (failures.length > 0 || b.error) {
+        failContainer.classList.remove('d-none');
+        failList.innerHTML = '';
+        if (b.error) {
+            const li = document.createElement('li');
+            li.textContent = b.error;
+            failList.appendChild(li);
+        }
+        failures.forEach(f => {
+            const li = document.createElement('li');
+            li.textContent = `[${f.stage || 'Giai đoạn'}] ${f.error || f.status || 'Thất bại'}`;
+            failList.appendChild(li);
+        });
+    } else {
+        failContainer.classList.add('d-none');
+    }
+}
+
+function setStageBadge(elemId, isSuccess) {
+    const el = document.getElementById(elemId);
+    if (!el) return;
+    if (isSuccess) {
+        el.innerHTML = '<span class="badge bg-success-subtle text-success border border-success">Đạt (30)</span>';
+    } else {
+        el.innerHTML = '<span class="badge bg-secondary-subtle text-secondary border border-secondary">Đang xử lý</span>';
+    }
+}
+</script>
+{% endblock %}

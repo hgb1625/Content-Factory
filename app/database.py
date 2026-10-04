@@ -46,15 +46,19 @@ def get_db():
         db.close()
 
 
-def migrate_schema():
+def migrate_schema(target_engine=None):
     """Non-destructively check and add new columns to existing SQLite tables."""
+    eng = target_engine or engine
     try:
-        with engine.connect() as conn:
+        with eng.connect() as conn:
             # Check videos table columns
             res = conn.execute(text("PRAGMA table_info(videos)")).fetchall()
             existing_cols = {r[1] for r in res}
 
             video_columns = [
+                ("provider", "VARCHAR(64) DEFAULT 'douyin'"),
+                ("canonical_source_id", "VARCHAR(255)"),
+                ("media_hash", "VARCHAR(64)"),
                 ("edit_mode", "VARCHAR(32) DEFAULT 'AUTO_EDIT'"),
                 ("auto_edit_status", "VARCHAR(64)"),
                 ("subtitle_region", "TEXT"),
@@ -67,6 +71,19 @@ def migrate_schema():
                 if col_name not in existing_cols:
                     conn.execute(text(f"ALTER TABLE videos ADD COLUMN {col_name} {col_type}"))
                     conn.commit()
+
+            # Ensure indices exist
+            index_statements = [
+                "CREATE INDEX IF NOT EXISTS ix_videos_provider ON videos(provider)",
+                "CREATE INDEX IF NOT EXISTS ix_videos_canonical_source_id ON videos(canonical_source_id)",
+                "CREATE INDEX IF NOT EXISTS ix_videos_media_hash ON videos(media_hash)",
+            ]
+            for idx_stmt in index_statements:
+                try:
+                    conn.execute(text(idx_stmt))
+                    conn.commit()
+                except Exception:
+                    pass
 
             # Check publishing table columns
             res_pub = conn.execute(text("PRAGMA table_info(publishing)")).fetchall()

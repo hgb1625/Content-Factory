@@ -306,7 +306,7 @@ class TestGeminiReliability(unittest.TestCase):
 
     def test_12_start_bat_recognizes_venv(self):
         """START.bat includes .venv\\Scripts\\python.exe in launcher sequence."""
-        start_bat = Path("D:/Content_Factory/START.bat")
+        start_bat = Path(__file__).resolve().parent / "START.bat"
         self.assertTrue(start_bat.exists(), "START.bat must exist")
         content = start_bat.read_text(encoding="utf-8")
         self.assertIn(".venv\\Scripts\\python.exe", content)

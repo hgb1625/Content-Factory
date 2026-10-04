@@ -4,7 +4,8 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, Any, Union, Optional, Tuple
+from typing import Dict, Any, Union, Optional, Tuple, List
+import hashlib
 import httpx
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,17 @@ from app.services.ffmpeg_utils import run_ffprobe
 logger = logging.getLogger("app.services.downloader")
 
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+
+
+def calculate_file_sha256(file_path: Path) -> str:
+    """Calculate cryptographic SHA-256 hash of a media file."""
+    if not file_path.is_file():
+        return ""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def validate_downloaded_media(file_path: Path) -> Tuple[bool, Dict[str, Any], Optional[str]]:
@@ -453,7 +465,22 @@ class DownloaderService:
         dl_res = self.download_video(orig_url, str(target_path))
         if not dl_res.get("success"):
             db.commit()
-            return dl_res
+        # Calculate media hash and enforce media-level duplicate detection
+        m_hash = calculate_file_sha256(target_path)
+        if m_hash:
+            dup_media = db.query(Video).filter(Video.media_hash == m_hash, Video.video_id != video.video_id).first()
+            if dup_media:
+                if target_path.exists():
+                    target_path.unlink()
+                logger.warning(f"Duplicate media hash {m_hash} matches existing video {dup_media.video_id}. Download rejected.")
+                return {
+                    "success": False,
+                    "status": "DUPLICATE_MEDIA_HASH",
+                    "media_hash": m_hash,
+                    "duplicate_video_id": dup_media.video_id,
+                    "error": f"Media content hash already exists in system for {dup_media.video_id} (duplicate video content)."
+                }
+            video.media_hash = m_hash
 
         rel_path = f"original/{target_filename}"
         video.local_file = rel_path
@@ -464,6 +491,7 @@ class DownloaderService:
 
         dl_res["video_id"] = video.video_id
         dl_res["local_file"] = rel_path
+        dl_res["media_hash"] = m_hash
         dl_res["message"] = f"Đã lưu video gốc cho {video.video_id} thành công!"
         return dl_res
 
@@ -506,6 +534,22 @@ class DownloaderService:
             # Copy file to downloads/original/Vxxxx_original.mp4
             shutil.copy2(src, target_path)
 
+        # Calculate media hash and enforce media-level duplicate detection
+        m_hash = calculate_file_sha256(target_path)
+        if m_hash:
+            dup_media = db.query(Video).filter(Video.media_hash == m_hash, Video.video_id != video.video_id).first()
+            if dup_media:
+                if target_path.exists():
+                    target_path.unlink()
+                return {
+                    "success": False,
+                    "status": "DUPLICATE_MEDIA_HASH",
+                    "media_hash": m_hash,
+                    "duplicate_video_id": dup_media.video_id,
+                    "error": f"Media content hash matches existing video {dup_media.video_id}."
+                }
+            video.media_hash = m_hash
+
         # Update Video record in DB
         rel_path = f"original/{target_filename}"
         video.local_file = rel_path
@@ -514,11 +558,172 @@ class DownloaderService:
         db.commit()
         db.refresh(video)
 
-        logger.info(f"Local video attached to {video_id}: {target_path} (Status: DOWNLOADED)")
+        logger.info(f"Local video attached to {video_id}: {target_path} (Status: DOWNLOADED, SHA256: {m_hash[:12]}...)")
         return {
             "success": True,
             "video_id": video_id,
             "local_file": rel_path,
+            "media_hash": m_hash,
             "status": "DOWNLOADED",
             "message": f"Đã lưu video gốc cho {video_id} thành công!"
+        }
+
+    def download_batch(
+        self,
+        db: Session,
+        items: List[Dict[str, Any]],
+        timeout_per_video: float = 60.0
+    ) -> Dict[str, Any]:
+        """
+        Execute batch download for multiple video source candidates.
+        Enforces:
+        - Validates each media item with ffprobe.
+        - Calculates and stores SHA-256 media hash.
+        - Rejects duplicate media hashes across the batch and existing database.
+        - Never silently marks incomplete batch as success.
+        """
+        results: List[Dict[str, Any]] = []
+        failed_items: List[Dict[str, Any]] = []
+        seen_batch_hashes = set()
+
+        logger.info(f"Starting batch download for {len(items)} items...")
+
+        for it in items:
+            prod_id = it.get("product_id")
+            source = it.get("source_candidate") or {}
+            source_url = getattr(source, "canonical_url", None) or source.get("canonical_url", "")
+            download_url = getattr(source, "download_url", None) or source.get("download_url", "") or source_url
+            canonical_id = getattr(source, "canonical_source_id", None) or source.get("canonical_source_id", "")
+            provider_id = getattr(source, "provider", None) or source.get("provider", "douyin")
+
+            # Create video record
+            vid_id = get_next_video_id(db)
+            video = Video(
+                video_id=vid_id,
+                product_id=prod_id,
+                douyin_url=source_url or download_url or f"https://source/{vid_id}",
+                provider=provider_id,
+                canonical_source_id=canonical_id,
+                downloaded=False,
+                approved=True,
+                used=False,
+                status="DOWNLOADING"
+            )
+            db.add(video)
+            db.flush()
+
+            target_filename = f"{vid_id}_original.mp4"
+            target_path = self.original_dir / target_filename
+
+            # If download_url points to a local file
+            if Path(download_url).is_file():
+                attach_res = self.attach_local_video(db, vid_id, Path(download_url))
+                if attach_res.get("success"):
+                    m_hash = attach_res.get("media_hash")
+                    if m_hash in seen_batch_hashes:
+                        # Reject duplicate in same batch
+                        if target_path.exists():
+                            target_path.unlink()
+                        video.status = "DUPLICATE_MEDIA_HASH"
+                        db.commit()
+                        failed_items.append({
+                            "product_id": prod_id,
+                            "video_id": vid_id,
+                            "status": "DUPLICATE_MEDIA_HASH",
+                            "error": f"Duplicate media hash {m_hash} within current batch."
+                        })
+                        continue
+                    seen_batch_hashes.add(m_hash)
+                    results.append(attach_res)
+                else:
+                    failed_items.append({
+                        "product_id": prod_id,
+                        "video_id": vid_id,
+                        "status": "DOWNLOAD_FAILED",
+                        "error": attach_res.get("error")
+                    })
+                continue
+
+            # Remote URL download via streaming
+            dl_res = self.snaptiktok.download_file(download_url, target_path, timeout=timeout_per_video)
+            if not dl_res[0]:
+                video.status = "DOWNLOAD_FAILED"
+                db.commit()
+                failed_items.append({
+                    "product_id": prod_id,
+                    "video_id": vid_id,
+                    "status": "DOWNLOAD_FAILED",
+                    "error": dl_res[1]
+                })
+                continue
+
+            # Validate ffprobe
+            is_valid, meta, probe_err = validate_downloaded_media(target_path)
+            if not is_valid:
+                if target_path.exists():
+                    target_path.unlink()
+                video.status = "INVALID_MEDIA"
+                db.commit()
+                failed_items.append({
+                    "product_id": prod_id,
+                    "video_id": vid_id,
+                    "status": "INVALID_MEDIA",
+                    "error": probe_err
+                })
+                continue
+
+            # Calculate SHA-256
+            m_hash = calculate_file_sha256(target_path)
+            if m_hash in seen_batch_hashes:
+                if target_path.exists():
+                    target_path.unlink()
+                video.status = "DUPLICATE_MEDIA_HASH"
+                db.commit()
+                failed_items.append({
+                    "product_id": prod_id,
+                    "video_id": vid_id,
+                    "status": "DUPLICATE_MEDIA_HASH",
+                    "error": f"Duplicate media hash {m_hash} within current batch."
+                })
+                continue
+
+            # Check DB duplicate media hash
+            dup_db = db.query(Video).filter(Video.media_hash == m_hash, Video.video_id != vid_id).first()
+            if dup_db:
+                if target_path.exists():
+                    target_path.unlink()
+                video.status = "DUPLICATE_MEDIA_HASH"
+                db.commit()
+                failed_items.append({
+                    "product_id": prod_id,
+                    "video_id": vid_id,
+                    "status": "DUPLICATE_MEDIA_HASH",
+                    "error": f"Duplicate media hash {m_hash} matches existing video {dup_db.video_id}."
+                })
+                continue
+
+            seen_batch_hashes.add(m_hash)
+            video.media_hash = m_hash
+            video.local_file = f"original/{target_filename}"
+            video.downloaded = True
+            video.status = "DOWNLOADED"
+            db.commit()
+
+            results.append({
+                "success": True,
+                "product_id": prod_id,
+                "video_id": vid_id,
+                "local_file": video.local_file,
+                "media_hash": m_hash,
+                "duration": meta.get("duration")
+            })
+
+        all_success = (len(results) == len(items)) and not failed_items
+        return {
+            "success": all_success,
+            "status": "DOWNLOADED" if all_success else "INCOMPLETE",
+            "total_requested": len(items),
+            "downloaded_count": len(results),
+            "videos": results,
+            "failed_items": failed_items
         }
