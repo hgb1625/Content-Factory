@@ -63,10 +63,9 @@ def main():
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        from vieneu import Vieneu
-
         # Suppress Hugging Face download warnings
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+        from vieneu import Vieneu
 
         # Initialize TTS instance
         tts = Vieneu(mode=mode)

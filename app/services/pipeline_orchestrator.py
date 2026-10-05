@@ -407,7 +407,7 @@ class ProductionPipelineOrchestrator:
         provider = ai_mgr.get_active_provider(db=session)
 
         try:
-            raw_products = provider.generate_products(niche=niche, count=target_count)
+            raw_products = provider.generate_products(niche=niche, count=target_count, db=session)
         except Exception as e:
             return [], f"AI provider product generation failed: {e}"
 

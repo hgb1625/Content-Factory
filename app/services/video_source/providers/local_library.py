@@ -34,7 +34,7 @@ class LocalLibrarySourceProvider(VideoSourceProvider):
     def display_name(self) -> str:
         return "Local Stock Library"
 
-    def is_configured(self) -> bool:
+    def is_configured(self, db: Optional[Any] = None) -> bool:
         return self.library_dir.exists() and self.library_dir.is_dir()
 
     def search_source(
@@ -42,7 +42,9 @@ class LocalLibrarySourceProvider(VideoSourceProvider):
         query: str,
         niche: str = "",
         product_id: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
+        db: Optional[Any] = None,
+        **kwargs
     ) -> SourceCandidate:
         """Find an unconsumed valid local video file from the library."""
         if not self.is_configured():

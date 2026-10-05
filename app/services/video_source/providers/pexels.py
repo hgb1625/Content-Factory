@@ -37,26 +37,100 @@ class PexelsSourceProvider(VideoSourceProvider):
     def display_name(self) -> str:
         return "Pexels Stock Video (9:16 Portrait)"
 
-    def get_api_key(self) -> str:
+    def get_api_key(self, db: Optional[Any] = None) -> str:
         if self._api_key:
             return self._api_key
-        # Check environment variable
-        return os.getenv("PEXELS_API_KEY", "").strip()
+        from app.config import get_pexels_api_key
+        return get_pexels_api_key(db)
 
-    def is_configured(self) -> bool:
-        return bool(self.get_api_key())
+    def is_configured(self, db: Optional[Any] = None) -> bool:
+        return bool(self.get_api_key(db=db))
+
+    def test_connection(self, db: Optional[Any] = None) -> Dict[str, Any]:
+        """
+        Lightweight zero-generation-cost connection test for Pexels Video API.
+        Sends a single HTTP GET request (per_page=1) to verify API key validity.
+        Never prints or logs the full key.
+        """
+        from app.config import get_key_hint
+        api_key = self.get_api_key(db=db)
+        if not api_key:
+            return {
+                "success": False,
+                "connected": False,
+                "configured": False,
+                "message": "Pexels API key chưa được cấu hình. Vui lòng thêm key trong Cài Đặt hoặc .env.",
+                "error_type": "missing_key"
+            }
+
+        headers = {
+            "Authorization": api_key,
+            "User-Agent": "ContentFactory/1.0"
+        }
+        test_url = "https://api.pexels.com/videos/popular"
+        params = {"per_page": 1}
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(test_url, headers=headers, params=params)
+
+            hint = get_key_hint(api_key)
+            if resp.status_code == 200:
+                data = resp.json()
+                total = data.get("total_results", 0)
+                return {
+                    "success": True,
+                    "connected": True,
+                    "configured": True,
+                    "key_hint": hint,
+                    "message": f"Kết nối Pexels Video API thành công! API Key ({hint}) hợp lệ.",
+                    "total_results": total
+                }
+            elif resp.status_code in (401, 403):
+                return {
+                    "success": False,
+                    "connected": False,
+                    "configured": True,
+                    "key_hint": hint,
+                    "message": f"Xác thực Pexels thất bại (HTTP {resp.status_code}). API Key không chính xác hoặc hết hạn.",
+                    "error_type": "auth_failed"
+                }
+            else:
+                clean_err = sanitize_secrets(resp.text[:200])
+                return {
+                    "success": False,
+                    "connected": False,
+                    "configured": True,
+                    "key_hint": hint,
+                    "message": f"Pexels API trả về lỗi HTTP {resp.status_code}: {clean_err}",
+                    "error_type": f"http_{resp.status_code}"
+                }
+        except Exception as e:
+            clean_msg = sanitize_secrets(str(e))
+            hint = get_key_hint(api_key)
+            return {
+                "success": False,
+                "connected": False,
+                "configured": True,
+                "key_hint": hint,
+                "message": f"Lỗi mạng khi kết nối Pexels: {clean_msg}",
+                "error_type": "network_error"
+            }
 
     def search_source(
         self,
         query: str,
         niche: str = "",
         product_id: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
+        db: Optional[Any] = None,
+        **kwargs
     ) -> SourceCandidate:
         """
         Search Pexels API for vertical (9:16) stock video matching query.
         """
-        api_key = self.get_api_key()
+        target_db = db or (options.get("db") if isinstance(options, dict) else None)
+        api_key = self.get_api_key(db=target_db)
         if not api_key:
             return SourceCandidate(
                 provider=self.provider_id,
@@ -149,7 +223,7 @@ class PexelsSourceProvider(VideoSourceProvider):
                 error_message=f"Network error querying Pexels: {clean_msg}"
             )
 
-    def resolve_source(self, url_or_id: str) -> SourceCandidate:
+    def resolve_source(self, url_or_id: str, db: Optional[Any] = None) -> SourceCandidate:
         """Resolve a Pexels video by direct ID or URL."""
         # Extracts ID from pexels.com/video/... or raw ID
         import re
@@ -164,7 +238,7 @@ class PexelsSourceProvider(VideoSourceProvider):
             )
 
         video_id = m.group(1)
-        api_key = self.get_api_key()
+        api_key = self.get_api_key(db=db)
         if not api_key:
             return SourceCandidate(
                 provider=self.provider_id,

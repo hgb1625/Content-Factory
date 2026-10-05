@@ -17,6 +17,7 @@ from app.config import (
     DEFAULT_GROQ_MODEL, get_groq_model, get_groq_api_key,
     DEFAULT_OPENROUTER_MODEL, get_openrouter_model, get_openrouter_api_key,
     DEFAULT_MWAPI_MODEL, get_mwapi_model, get_mwapi_api_key,
+    get_pexels_api_key,
     DEFAULT_ACTIVE_AI_PROVIDER, get_active_ai_provider,
     mask_api_key, get_key_hint, SUPPORTED_AI_PROVIDERS,
     get_ai_fallback_enabled, get_ai_fallback_providers, get_ai_fallback_on_quota,
@@ -26,7 +27,7 @@ from app.models import Setting
 from app.services.usage_tracker import GeminiUsageTracker
 from app.services.subtitle_service import SubtitleService
 from app.services.tts.vieneu_provider import VieNeuProvider
-from app.services.ai.providers.common import sanitize_secrets
+from app.services.ai.providers.common import sanitize_secrets, global_model_cache
 from app.services.ai import get_ai_manager
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
@@ -56,6 +57,9 @@ def save_provider_settings(db: Session, provider_id: str, submitted_key: str, su
     Persist provider key and model into SQLite Setting (runtime source).
     - Blank or empty submitted_key preserves the existing key in SQLite.
     - Non-empty, non-masked key explicitly replaces the stored key.
+    - Accidental leading/trailing whitespace is stripped.
+    - Masked placeholder values (****xxxx or ••••xxxx) are never stored as real keys.
+    - Invalidates in-memory model catalog cache for the provider on update.
     - If provider is Gemini, also syncs to .env for backward compatibility.
     """
     pid = provider_id.strip().lower()
@@ -63,7 +67,8 @@ def save_provider_settings(db: Session, provider_id: str, submitted_key: str, su
         return
 
     key_clean = submitted_key.strip() if submitted_key else ""
-    if key_clean and not key_clean.startswith("****") and "*" not in key_clean and not key_clean.startswith("••••"):
+    key_updated = False
+    if key_clean and "*" not in key_clean and "•" not in key_clean:
         db_key = db.query(Setting).filter(Setting.key.in_([f"{pid}_api_key", f"{pid.upper()}_API_KEY"])).first()
         if not db_key:
             db_key = Setting(key=f"{pid}_api_key", value=key_clean, description=f"{pid.title()} API Key")
@@ -72,10 +77,12 @@ def save_provider_settings(db: Session, provider_id: str, submitted_key: str, su
             db_key.value = key_clean
         if pid == "gemini":
             set_key(str(ENV_FILE), "GEMINI_API_KEY", key_clean)
+        key_updated = True
 
     model_clean = submitted_model.strip() if submitted_model else ""
     if pid == "anthropic" and model_clean == LEGACY_ANTHROPIC_DEFAULT_MODEL:
         model_clean = DEFAULT_ANTHROPIC_MODEL
+    model_updated = False
     if model_clean:
         db_model = db.query(Setting).filter(Setting.key.in_([f"{pid}_model", f"{pid.upper()}_MODEL"])).first()
         if not db_model:
@@ -85,6 +92,10 @@ def save_provider_settings(db: Session, provider_id: str, submitted_key: str, su
             db_model.value = model_clean
         if pid == "gemini":
             set_key(str(ENV_FILE), "GEMINI_MODEL", model_clean)
+        model_updated = True
+
+    if key_updated or model_updated:
+        global_model_cache.invalidate_provider(pid)
 
 
 def test_provider_connection_logic(provider_id: str, db: Optional[Session] = None) -> Dict[str, Any]:
@@ -147,6 +158,16 @@ def get_provider_models_logic(provider_id: str, db: Optional[Session] = None) ->
     manager = get_ai_manager()
     try:
         models = manager.list_models(provider_id=pid, db=db)
+        if not models:
+            test_res = manager.test_connection(provider_id=pid, db=db)
+            if isinstance(test_res, dict) and not test_res.get("connected"):
+                err_msg = test_res.get("message") or "Chưa thể kết nối tới nhà cung cấp để tải mô hình."
+                return {
+                    "success": False,
+                    "provider": pid,
+                    "models": [],
+                    "error": sanitize_secrets(err_msg)
+                }
         return {
             "success": True,
             "provider": pid,
@@ -182,6 +203,7 @@ def get_ai_system_diagnostics(db: Optional[Session] = None) -> Dict[str, Any]:
         ("anthropic", "Anthropic", "direct", False, get_anthropic_api_key, get_anthropic_model),
         ("groq", "Groq", "direct", False, get_groq_api_key, get_groq_model),
         ("openrouter", "OpenRouter", "gateway", True, get_openrouter_api_key, get_openrouter_model),
+        ("mwapi", "MWAPI Gateway", "gateway", True, get_mwapi_api_key, get_mwapi_model),
     ]
 
     providers_status = {}
@@ -219,6 +241,9 @@ def get_ai_system_diagnostics(db: Optional[Session] = None) -> Dict[str, Any]:
 def get_current_settings(db: Session = None):
     load_dotenv(dotenv_path=ENV_FILE, override=True)
     raw_key = get_gemini_api_key(db)
+    raw_pexels_key = get_pexels_api_key(db)
+    pexels_configured = bool(raw_pexels_key)
+    pexels_key_hint = get_key_hint(raw_pexels_key) if pexels_configured else ""
     masked_key = ""
     if raw_key:
         if len(raw_key) > 8:
@@ -297,6 +322,10 @@ def get_current_settings(db: Session = None):
         "auto_edit_hook": os.getenv("AUTO_EDIT_HOOK", "true").lower() == "true",
         "auto_edit_auto_render": os.getenv("AUTO_EDIT_AUTO_RENDER", "false").lower() == "true",
         "ffmpeg_status": check_ffmpeg_available(),
+        # Video Source Discovery (Pexels)
+        "pexels_configured": pexels_configured,
+        "pexels_key_hint": pexels_key_hint,
+        "pexels_api_key_set": pexels_configured,
         # Phase 13 Subtitle & Voice Settings
         "subtitles": sub_prefs,
         "available_voices": available_voices,
@@ -335,6 +364,7 @@ def save_settings(
     openrouter_model: str = Form(DEFAULT_OPENROUTER_MODEL),
     mwapi_api_key: str = Form(""),
     mwapi_model: str = Form(DEFAULT_MWAPI_MODEL),
+    pexels_api_key: str = Form(""),
     ai_fallback_enabled: str = Form("off"),
     ai_fallback_providers: str = Form(""),
     ai_fallback_on_quota: str = Form("off"),
@@ -366,6 +396,54 @@ def save_settings(
     subtitle_animation: str = Form("fade"),
     db: Session = Depends(get_db)
 ):
+    def _form_val(val, default=""):
+        if hasattr(val, "default"):
+            return default if val.default is ... else (val.default or default)
+        return default if val is None else val
+
+    active_ai_provider = _form_val(active_ai_provider, "gemini")
+    gemini_api_key = _form_val(gemini_api_key, "")
+    gemini_model = _form_val(gemini_model, DEFAULT_GEMINI_MODEL)
+    openai_api_key = _form_val(openai_api_key, "")
+    openai_model = _form_val(openai_model, DEFAULT_OPENAI_MODEL)
+    anthropic_api_key = _form_val(anthropic_api_key, "")
+    anthropic_model = _form_val(anthropic_model, DEFAULT_ANTHROPIC_MODEL)
+    groq_api_key = _form_val(groq_api_key, "")
+    groq_model = _form_val(groq_model, DEFAULT_GROQ_MODEL)
+    openrouter_api_key = _form_val(openrouter_api_key, "")
+    openrouter_model = _form_val(openrouter_model, DEFAULT_OPENROUTER_MODEL)
+    mwapi_api_key = _form_val(mwapi_api_key, "")
+    mwapi_model = _form_val(mwapi_model, DEFAULT_MWAPI_MODEL)
+    pexels_api_key = _form_val(pexels_api_key, "")
+    ai_fallback_enabled = _form_val(ai_fallback_enabled, "off")
+    ai_fallback_providers = _form_val(ai_fallback_providers, "")
+    ai_fallback_on_quota = _form_val(ai_fallback_on_quota, "off")
+    products_per_research = _form_val(products_per_research, "10")
+    keywords_per_product = _form_val(keywords_per_product, "3")
+    videos_per_product = _form_val(videos_per_product, "5")
+    tts_engine = _form_val(tts_engine, "VieNeu-TTS")
+    default_voice = _form_val(default_voice, "Trúc Ly")
+    auto_generate_voice = _form_val(auto_generate_voice, "off")
+    original_folder = _form_val(original_folder, "downloads/original")
+    package_folder = _form_val(package_folder, "downloads/packages")
+    final_folder = _form_val(final_folder, "downloads/final")
+    ffmpeg_path = _form_val(ffmpeg_path, "")
+    ffprobe_path = _form_val(ffprobe_path, "")
+    auto_edit_cover_type = _form_val(auto_edit_cover_type, "blur")
+    auto_edit_blur_strength = _form_val(auto_edit_blur_strength, "10")
+    auto_edit_source_audio = _form_val(auto_edit_source_audio, "low")
+    auto_edit_subtitles = _form_val(auto_edit_subtitles, "off")
+    auto_edit_hook = _form_val(auto_edit_hook, "off")
+    auto_edit_auto_render = _form_val(auto_edit_auto_render, "off")
+    subtitle_font = _form_val(subtitle_font, "Arial Bold")
+    subtitle_size = _form_val(subtitle_size, "medium")
+    subtitle_color = _form_val(subtitle_color, "#FFFFFF")
+    subtitle_outline_color = _form_val(subtitle_outline_color, "#000000")
+    subtitle_outline_width = _form_val(subtitle_outline_width, "2.2")
+    subtitle_position = _form_val(subtitle_position, "bottom")
+    subtitle_custom_y = _form_val(subtitle_custom_y, "0.84")
+    subtitle_animation = _form_val(subtitle_animation, "fade")
+
     if not ENV_FILE.exists():
         ENV_FILE.touch()
 
@@ -386,6 +464,16 @@ def save_settings(
     save_provider_settings(db, "groq", groq_api_key, groq_model)
     save_provider_settings(db, "openrouter", openrouter_api_key, openrouter_model)
     save_provider_settings(db, "mwapi", mwapi_api_key, mwapi_model)
+
+    # 2b. Video Source: Pexels API Key (SQLite is authoritative; blank/masked preserves existing)
+    pexels_clean = (pexels_api_key or "").strip()
+    if pexels_clean and "*" not in pexels_clean and "•" not in pexels_clean:
+        db_pexels = db.query(Setting).filter(Setting.key.in_(["pexels_api_key", "PEXELS_API_KEY"])).first()
+        if not db_pexels:
+            db_pexels = Setting(key="pexels_api_key", value=pexels_clean, description="Pexels Video API Key")
+            db.add(db_pexels)
+        else:
+            db_pexels.value = pexels_clean
 
     # 3. Smart Routing & Cross-Provider Fallback Settings
     fallback_en_val = "true" if ai_fallback_enabled in ("on", "true", "1") else "false"
@@ -561,6 +649,27 @@ def api_test_watcher():
 def api_test_ffmpeg():
     from app.services.ffmpeg_utils import check_ffmpeg_available
     return check_ffmpeg_available()
+
+
+@router.post("/api/settings/test-pexels")
+async def api_test_pexels(request: Request, db: Session = Depends(get_db)):
+    """
+    Lightweight zero-generation-cost test connection to Pexels Video API.
+    Uses SQLite-backed key by default, or accepts an optional key in request body.
+    """
+    api_key_override = None
+    try:
+        data = await request.json()
+        if isinstance(data, dict):
+            k = (data.get("api_key") or "").strip()
+            if k and "*" not in k and "•" not in k:
+                api_key_override = k
+    except Exception:
+        pass
+
+    from app.services.video_source.providers.pexels import PexelsSourceProvider
+    prov = PexelsSourceProvider(api_key=api_key_override)
+    return JSONResponse(content=prov.test_connection(db=db))
 
 
 @router.get("/api/gemini/status")

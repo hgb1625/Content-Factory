@@ -413,6 +413,56 @@
                     </div>
                 </div>
 
+                <!-- Video Source Configuration (Pexels Stock Video) -->
+                <h6 class="fw-bold text-white border-bottom border-secondary-subtle pb-2 mb-3">
+                    <i class="bi bi-camera-video text-primary me-2"></i>Nguồn Video Kho (Video Source - Pexels API)
+                </h6>
+                <div class="card border-secondary-subtle bg-dark-subtle p-3 mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-collection-play text-primary fs-5"></i>
+                            <span class="fw-semibold text-white">Pexels Video API (Stage 2 Video Discovery)</span>
+                        </div>
+                        <div>
+                            {% if settings.pexels_configured %}
+                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>{{ settings.pexels_key_hint }}</span>
+                            {% else %}
+                            <span class="badge bg-warning-subtle text-warning">Chưa có Key</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <p class="small text-secondary mb-3">
+                        Pexels API được sử dụng trong Giai Đoạn 2 (Stage 2 Video Acquisition) của Production 30 để tìm kiếm video dọc 9:16 miễn phí, bản quyền chuẩn và độ phân giải cao.
+                    </p>
+
+                    <!-- Pexels API Key Field -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-light">Pexels API Key:</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control font-monospace" name="pexels_api_key" id="input_key_pexels" value="" autocomplete="new-password" placeholder="{% if settings.pexels_configured %}Đã lưu (để trống để giữ nguyên: {{ settings.pexels_key_hint }}){% else %}Nhập Pexels API Key...{% endif %}">
+                            <button class="btn btn-outline-secondary btn-toggle-pwd" type="button" data-target="input_key_pexels" title="Hiện/Ẩn Key">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text text-secondary small">
+                            {% if settings.pexels_configured %}
+                            <span class="text-success"><i class="bi bi-shield-check me-1"></i>Key đã được lưu an toàn trong SQLite Settings. Để trống để giữ nguyên; nhập mới để thay thế.</span>
+                            {% else %}
+                            <span class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>Chưa cấu hình API Key. Lấy API key miễn phí tại <a href="https://www.pexels.com/api/" target="_blank" class="text-info text-decoration-none">pexels.com/api</a>.</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Test Connection Button -->
+                    <div class="d-flex align-items-center gap-2 pt-2 border-top border-secondary-subtle">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnTestPexels">
+                            <i class="bi bi-plug me-1"></i>Kiểm Tra Kết Nối Pexels
+                            <span class="spinner-border spinner-border-sm ms-1 d-none" id="spinnerTestPexels"></span>
+                        </button>
+                        <div class="small" id="test_status_pexels"></div>
+                    </div>
+                </div>
+
                 <!-- TTS Settings -->
                 <h6 class="fw-bold text-white border-bottom border-secondary-subtle pb-2 mb-3">
                     <i class="bi bi-mic text-warning me-2"></i>Chuyển Đổi Văn Bản Thành Giọng Nói (VieNeu-TTS)
@@ -687,6 +737,14 @@
                         <i class="bi bi-arrow-right"></i>
                     </button>
                     <div id="ffmpegTestResult" class="small text-secondary"></div>
+                </div>
+
+                <div class="mb-3">
+                    <button class="btn btn-outline-info w-100 mb-2 text-start d-flex justify-content-between align-items-center" id="btnTestPexelsDiag">
+                        <span><i class="bi bi-camera-video me-2"></i>TEST PEXELS API</span>
+                        <i class="bi bi-arrow-right"></i>
+                    </button>
+                    <div id="pexelsDiagTestResult" class="small text-secondary"></div>
                 </div>
 
                 <div class="mb-3">
@@ -986,6 +1044,50 @@
         } catch (e) {
             resDiv.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> Lỗi: ${e.message}</span>`;
         }
+    });
+
+    // ── Test Pexels API Connection Handler ────────────────────────
+    async function runTestPexels(targetDiv, spinnerEl, btnEl) {
+        const inputKeyEl = document.getElementById('input_key_pexels');
+        const typedKey = inputKeyEl ? inputKeyEl.value.trim() : '';
+        const payload = {};
+        if (typedKey && !typedKey.includes('*') && !typedKey.includes('•')) {
+            payload.api_key = typedKey;
+        }
+
+        if (btnEl) btnEl.disabled = true;
+        if (spinnerEl) spinnerEl.classList.remove('d-none');
+        if (targetDiv) targetDiv.innerHTML = '<span class="text-info"><i class="spinner-border spinner-border-sm me-1"></i> Đang kiểm tra kết nối Pexels...</span>';
+
+        try {
+            const resp = await fetch('/api/settings/test-pexels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (data.connected || data.success) {
+                targetDiv.innerHTML = `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> ${data.message}</span>`;
+            } else {
+                targetDiv.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i> ${data.message || 'Xác thực Pexels thất bại.'}</span>`;
+            }
+        } catch (e) {
+            targetDiv.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> Lỗi: ${e.message}</span>`;
+        } finally {
+            if (btnEl) btnEl.disabled = false;
+            if (spinnerEl) spinnerEl.classList.add('d-none');
+        }
+    }
+
+    document.getElementById('btnTestPexels')?.addEventListener('click', function() {
+        const resDiv = document.getElementById('test_status_pexels');
+        const spinner = document.getElementById('spinnerTestPexels');
+        runTestPexels(resDiv, spinner, this);
+    });
+
+    document.getElementById('btnTestPexelsDiag')?.addEventListener('click', function() {
+        const resDiv = document.getElementById('pexelsDiagTestResult');
+        runTestPexels(resDiv, null, this);
     });
 
     // ── Phase 4 Fallback Candidates Ordering / Checkboxes ─

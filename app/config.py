@@ -77,6 +77,18 @@ def get_active_ai_provider(db=None) -> str:
                     return val
         except Exception as e:
             logger.debug(f"Could not read active provider from db settings: {e}")
+    else:
+        try:
+            from app.database import SessionLocal
+            from app.models import Setting
+            with SessionLocal() as session:
+                rec = session.query(Setting).filter(Setting.key.in_(["active_ai_provider", "ACTIVE_AI_PROVIDER"])).first()
+                if rec and rec.value and rec.value.strip():
+                    val = rec.value.strip().lower()
+                    if val in SUPPORTED_AI_PROVIDERS:
+                        return val
+        except Exception as e:
+            logger.debug(f"Could not read active provider from db session: {e}")
 
     load_dotenv(dotenv_path=ENV_FILE, override=True)
     env_provider = os.getenv("ACTIVE_AI_PROVIDER", "").strip().lower()
@@ -290,6 +302,16 @@ def get_mwapi_model(db=None) -> str:
                 return rec.value.strip()
         except Exception as e:
             logger.debug(f"Could not read mwapi model from db: {e}")
+    else:
+        try:
+            from app.database import SessionLocal
+            from app.models import Setting
+            with SessionLocal() as session:
+                rec = session.query(Setting).filter(Setting.key.in_(["mwapi_model", "MWAPI_MODEL"])).first()
+                if rec and rec.value and rec.value.strip():
+                    return rec.value.strip()
+        except Exception as e:
+            logger.debug(f"Could not read mwapi model from db session: {e}")
 
     load_dotenv(dotenv_path=ENV_FILE, override=True)
     env_model = os.getenv("MWAPI_MODEL", "").strip()
@@ -303,12 +325,64 @@ def get_mwapi_api_key(db=None) -> str:
             from app.models import Setting
             rec = db.query(Setting).filter(Setting.key.in_(["mwapi_api_key", "MWAPI_API_KEY"])).first()
             if rec and rec.value and rec.value.strip():
-                return rec.value.strip()
+                val = rec.value.strip()
+                if "*" not in val and "•" not in val:
+                    return val
         except Exception as e:
             logger.debug(f"Could not read mwapi api_key from db: {e}")
+    else:
+        try:
+            from app.database import SessionLocal
+            from app.models import Setting
+            with SessionLocal() as session:
+                rec = session.query(Setting).filter(Setting.key.in_(["mwapi_api_key", "MWAPI_API_KEY"])).first()
+                if rec and rec.value and rec.value.strip():
+                    val = rec.value.strip()
+                    if "*" not in val and "•" not in val:
+                        return val
+        except Exception as e:
+            logger.debug(f"Could not read mwapi api_key from db session: {e}")
 
     load_dotenv(dotenv_path=ENV_FILE, override=True)
     return os.getenv("MWAPI_API_KEY", "").strip()
+
+
+# ==============================================================================
+# PEXELS VIDEO SOURCE CONFIGURATION
+# ==============================================================================
+
+def get_pexels_api_key(db=None) -> str:
+    """
+    Single source of truth for Pexels API Key.
+    Resolution order:
+    1. SQLite settings table ('pexels_api_key' or 'PEXELS_API_KEY') if present and non-empty.
+    2. Environment variable PEXELS_API_KEY in .env only if SQLite has no key.
+    """
+    if db is not None:
+        try:
+            from app.models import Setting
+            rec = db.query(Setting).filter(Setting.key.in_(["pexels_api_key", "PEXELS_API_KEY"])).first()
+            if rec and rec.value and rec.value.strip():
+                val = rec.value.strip()
+                if "*" not in val and "•" not in val:
+                    return val
+        except Exception as e:
+            logger.debug(f"Could not read pexels api_key from db: {e}")
+    else:
+        try:
+            from app.database import SessionLocal
+            from app.models import Setting
+            with SessionLocal() as session:
+                rec = session.query(Setting).filter(Setting.key.in_(["pexels_api_key", "PEXELS_API_KEY"])).first()
+                if rec and rec.value and rec.value.strip():
+                    val = rec.value.strip()
+                    if "*" not in val and "•" not in val:
+                        return val
+        except Exception as e:
+            logger.debug(f"Could not read pexels api_key from db session: {e}")
+
+    load_dotenv(dotenv_path=ENV_FILE, override=True)
+    return os.getenv("PEXELS_API_KEY", "").strip()
 
 
 # ==============================================================================

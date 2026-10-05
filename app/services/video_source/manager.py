@@ -56,15 +56,22 @@ class VideoSourceManager:
             raise ValueError(f"Video source provider '{pid}' is not registered.")
         return self._providers[pid]
 
-    def list_providers(self) -> List[Dict[str, Any]]:
-        return [
-            {
+    def list_providers(self, db: Optional[Session] = None) -> List[Dict[str, Any]]:
+        import inspect
+        results = []
+        for p in self._providers.values():
+            try:
+                sig = inspect.signature(p.is_configured)
+                accepts_db = "db" in sig.parameters or any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
+                is_cfg = p.is_configured(db=db) if accepts_db else p.is_configured()
+            except Exception:
+                is_cfg = p.is_configured()
+            results.append({
                 "provider_id": p.provider_id,
                 "display_name": p.display_name,
-                "is_configured": p.is_configured()
-            }
-            for p in self._providers.values()
-        ]
+                "is_configured": is_cfg
+            })
+        return results
 
     def acquire_batch_sources(
         self,
@@ -79,6 +86,7 @@ class VideoSourceManager:
         - Strict deduplication: No two products may share the same canonical_source_id or canonical_url.
         - Fails honestly if any product cannot acquire a valid source.
         """
+        import inspect
         provider = self.get_provider(provider_id)
         candidates: List[SourceCandidate] = []
         seen_source_ids = set()
@@ -98,12 +106,21 @@ class VideoSourceManager:
                 if url:
                     existing_db_urls.add(url.strip())
 
+        sig = inspect.signature(provider.search_source)
+        accepts_db = "db" in sig.parameters or any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
+        opts = {"db": db}
+
         for idx, prod in enumerate(products, 1):
             query = prod.douyin_keywords or prod.name_vietnamese
+            extra_kwargs = {"options": opts}
+            if accepts_db:
+                extra_kwargs["db"] = db
+
             cand = provider.search_source(
                 query=query,
                 niche=prod.niche,
-                product_id=prod.product_id
+                product_id=prod.product_id,
+                **extra_kwargs
             )
 
             if not cand.is_usable:

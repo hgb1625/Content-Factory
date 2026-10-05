@@ -125,6 +125,13 @@ class ModelCatalogCache:
         """Clear all cached catalogs."""
         self._cache.clear()
 
+    def invalidate_provider(self, provider_id: str) -> None:
+        """Invalidate all cached model catalogs for a specific provider."""
+        prefix = f"{provider_id.strip().lower()}:"
+        to_delete = [k for k in self._cache.keys() if k.startswith(prefix)]
+        for k in to_delete:
+            self._cache.pop(k, None)
+
 
 # Global cache singleton
 global_model_cache = ModelCatalogCache(ttl_seconds=3600.0)

@@ -79,9 +79,27 @@ class MWAPIProvider(AIProvider):
         Strictly obeys max_retries (max_retries=0 for Research => exactly 1 HTTP call).
         Strictly submits EXACTLY ONE model string.
         """
-        api_key = get_mwapi_api_key(db)
-        raw_model = kwargs.get("model") or get_mwapi_model(db)
-        model_name = normalize_model_name(self.provider_id, raw_model)
+        local_session = None
+        target_db = db
+        if target_db is None:
+            try:
+                from app.database import SessionLocal
+                if SessionLocal:
+                    local_session = SessionLocal()
+                    target_db = local_session
+            except Exception as e:
+                logger.debug(f"Could not open local DB session in MWAPIProvider: {e}")
+
+        try:
+            api_key = get_mwapi_api_key(target_db)
+            raw_model = kwargs.get("model") or get_mwapi_model(target_db)
+            model_name = normalize_model_name(self.provider_id, raw_model)
+        finally:
+            if local_session is not None:
+                try:
+                    local_session.close()
+                except Exception:
+                    pass
 
         max_output_tokens = kwargs.get("max_output_tokens")
         temperature = kwargs.get("temperature")
@@ -295,8 +313,26 @@ class MWAPIProvider(AIProvider):
         Validate MWAPI connection and API key by calling GET /v1/models.
         Consumes exactly ZERO generation tokens.
         """
-        api_key = get_mwapi_api_key(db)
-        model_name = get_mwapi_model(db)
+        local_session = None
+        target_db = db
+        if target_db is None:
+            try:
+                from app.database import SessionLocal
+                if SessionLocal:
+                    local_session = SessionLocal()
+                    target_db = local_session
+            except Exception:
+                pass
+
+        try:
+            api_key = get_mwapi_api_key(target_db)
+            model_name = get_mwapi_model(target_db)
+        finally:
+            if local_session is not None:
+                try:
+                    local_session.close()
+                except Exception:
+                    pass
 
         if not api_key:
             return {
@@ -373,7 +409,25 @@ class MWAPIProvider(AIProvider):
         Dynamically list MWAPI models with 60-minute in-memory caching.
         Consumes ZERO generation tokens.
         """
-        api_key = get_mwapi_api_key(db)
+        local_session = None
+        target_db = db
+        if target_db is None:
+            try:
+                from app.database import SessionLocal
+                if SessionLocal:
+                    local_session = SessionLocal()
+                    target_db = local_session
+            except Exception:
+                pass
+
+        try:
+            api_key = get_mwapi_api_key(target_db)
+        finally:
+            if local_session is not None:
+                try:
+                    local_session.close()
+                except Exception:
+                    pass
         if not api_key:
             return []
 

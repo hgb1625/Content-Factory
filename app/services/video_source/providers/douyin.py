@@ -30,7 +30,7 @@ class DouyinSourceProvider(VideoSourceProvider):
     def display_name(self) -> str:
         return "Douyin (TikTok China)"
 
-    def is_configured(self) -> bool:
+    def is_configured(self, db: Optional[Any] = None) -> bool:
         # Douyin does not require an API key, but automated search requires browser session
         return True
 
@@ -39,7 +39,9 @@ class DouyinSourceProvider(VideoSourceProvider):
         query: str,
         niche: str = "",
         product_id: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
+        db: Optional[Any] = None,
+        **kwargs
     ) -> SourceCandidate:
         """
         Douyin public search without authenticated session and signing tokens

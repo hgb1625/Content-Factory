@@ -47,12 +47,17 @@ class VieNeuProvider(BaseTTSProvider):
             from app.database import BASE_DIR
         except ImportError:
             BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-        candidate_paths = [
+        custom_env = os.getenv("VIENEU_PYTHON_PATH") or os.getenv("VIENEU_PYTHON")
+        candidate_paths = []
+        if custom_env:
+            candidate_paths.append(Path(custom_env))
+
+        candidate_paths.extend([
             BASE_DIR / ".venv_vieneu_new" / "Scripts" / "python.exe",
             BASE_DIR / ".venv_vieneu_new" / "bin" / "python",
             BASE_DIR / ".venv_vieneu" / "Scripts" / "python.exe",
             BASE_DIR / ".venv_vieneu" / "bin" / "python",
-        ]
+        ])
         self._python_exe = None
         for p in candidate_paths:
             if p.exists():

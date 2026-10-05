@@ -70,7 +70,7 @@ class VideoSourceProvider(ABC):
         pass
 
     @abstractmethod
-    def is_configured(self) -> bool:
+    def is_configured(self, db: Optional[Any] = None) -> bool:
         """Check whether the provider has required credentials or environment configuration."""
         pass
 
@@ -80,7 +80,9 @@ class VideoSourceProvider(ABC):
         query: str,
         niche: str = "",
         product_id: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
+        db: Optional[Any] = None,
+        **kwargs
     ) -> SourceCandidate:
         """
         Search for a video source matching the query or product.
@@ -93,6 +95,6 @@ class VideoSourceProvider(ABC):
         pass
 
     @abstractmethod
-    def resolve_source(self, url_or_id: str) -> SourceCandidate:
+    def resolve_source(self, url_or_id: str, db: Optional[Any] = None) -> SourceCandidate:
         """Resolve a specific URL or identifier into a canonical SourceCandidate."""
         pass

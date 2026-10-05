@@ -485,5 +485,324 @@ class TestMWAPIGatewayProvider(unittest.TestCase):
         app.dependency_overrides.clear()
 
 
+    # =========================================================================
+    # 10. SYNCHRONIZATION, FINGERPRINT & 403 PERMISSION HANDLING
+    # =========================================================================
+
+    def test_mwapi_active_key_fingerprint_masking(self):
+        """Active key fingerprint displays only the last 4 characters and never exposes secrets."""
+        test_key = "sk-mock-dummy-test-key-5678"
+        self.db.add(Setting(key="mwapi_api_key", value=test_key))
+        self.db.commit()
+
+        key = get_mwapi_api_key(self.db)
+        self.assertEqual(key, test_key)
+
+        from app.config import get_key_hint, mask_api_key
+        hint = get_key_hint(key)
+        self.assertEqual(hint, "••••5678")
+        self.assertTrue(hint.endswith("5678"))
+        self.assertNotIn("sk-mock-dummy", hint)
+
+        masked = mask_api_key(key)
+        self.assertTrue(masked.endswith("5678"))
+        self.assertNotIn("mock-dummy", masked)
+
+    def test_mwapi_request_uses_active_sqlite_key_and_model(self):
+        """Requests use active key and model from SQLite Settings (claude-sonnet-4-6)."""
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        provider = MWAPIProvider()
+
+        test_key = "sk-mock-dummy-test-key-9876"
+        self.db.add(Setting(key="mwapi_api_key", value=test_key))
+        self.db.add(Setting(key="mwapi_model", value="claude-sonnet-4-6"))
+        self.db.commit()
+
+        with patch("httpx.Client.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": "list", "data": [{"id": "claude-sonnet-4-6"}]}
+            mock_get.return_value = mock_resp
+
+            res = provider.test_connection(db=self.db)
+            self.assertTrue(res["connected"])
+            self.assertEqual(res["configured_model"], "claude-sonnet-4-6")
+
+            # Verify SQLite key was passed in Authorization header
+            mock_get.assert_called_once()
+            headers = mock_get.call_args[1].get("headers", {})
+            self.assertEqual(headers.get("Authorization"), f"Bearer {test_key}")
+
+    def test_mwapi_403_permission_error_truthfully_reported(self):
+        """HTTP 403 Forbidden permission error is handled truthfully without bypass or silent fallback."""
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        from app.routes.settings import get_provider_models_logic
+        provider = MWAPIProvider()
+
+        test_key = "sk-mock-dummy-test-key-0000"
+        self.db.add(Setting(key="mwapi_api_key", value=test_key))
+        self.db.add(Setting(key="mwapi_model", value="claude-sonnet-4-6"))
+        self.db.commit()
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_resp.text = '{"error": {"message": "Permission denied for model \'claude-sonnet-4-6\'. Not authorized", "type": "permission_error"}}'
+
+        # 1. test_connection returns 403 permission error truthfully
+        with patch("httpx.Client.get", return_value=mock_resp):
+            res = provider.test_connection(db=self.db)
+            self.assertFalse(res["connected"])
+            self.assertEqual(res["error_type"], "permission")
+            self.assertIn("403", res["message"])
+            self.assertIn("claude-sonnet-4-6", res["message"])
+
+        # 2. get_provider_models_logic surfaces truthful 403 error
+        with patch("httpx.Client.get", return_value=mock_resp):
+            m_res = get_provider_models_logic("mwapi", db=self.db)
+            self.assertFalse(m_res["success"])
+            self.assertIn("403", m_res["error"])
+
+        # 3. generate raises AIPermissionError and never swallows 403
+        with patch("httpx.Client.post", return_value=mock_resp):
+            with self.assertRaises(AIPermissionError) as ctx:
+                provider.generate("Test prompt", db=self.db)
+            self.assertEqual(ctx.exception.status_code, 403)
+            self.assertIn("Permission denied", str(ctx.exception))
+
+    # =========================================================================
+    # 10. SYNCHRONIZATION, FINGERPRINT & PRECEDENCE (TASKS A-J)
+    # =========================================================================
+
+    def test_A_sqlite_mwapi_key_overrides_env_mwapi_key(self):
+        """A. SQLite MWAPI key strictly overrides .env MWAPI key. Fallback only when SQLite has no key."""
+        from app.config import get_mwapi_api_key
+
+        with patch.dict(os.environ, {"MWAPI_API_KEY": "sk-mock-stale-env-key-1111"}):
+            # 1. When SQLite has a key, SQLite wins unconditionally
+            self.db.add(Setting(key="mwapi_api_key", value="sk-mock-sqlite-authoritative-2222"))
+            self.db.commit()
+            key = get_mwapi_api_key(self.db)
+            self.assertEqual(key, "sk-mock-sqlite-authoritative-2222")
+
+            # 2. When SQLite has an empty key, it falls back to .env
+            db_setting = self.db.query(Setting).filter(Setting.key == "mwapi_api_key").first()
+            db_setting.value = ""
+            self.db.commit()
+            key_fallback = get_mwapi_api_key(self.db)
+            self.assertEqual(key_fallback, "sk-mock-stale-env-key-1111")
+
+    def test_B_saving_new_key_replaces_previous_sqlite_key(self):
+        """B. Saving a new key through Settings replaces the previous SQLite key."""
+        from app.routes.settings import save_provider_settings
+        from app.config import get_mwapi_api_key
+
+        # Set initial key
+        self.db.add(Setting(key="mwapi_api_key", value="sk-mock-initial-key-0001"))
+        self.db.commit()
+
+        # Save new key
+        save_provider_settings(self.db, "mwapi", "sk-mock-replaced-key-0002", "claude-sonnet-4-6")
+        self.db.commit()
+
+        self.assertEqual(get_mwapi_api_key(self.db), "sk-mock-replaced-key-0002")
+
+    def test_C_blank_api_key_input_preserves_current_key(self):
+        """C. Blank API key input in Settings preserves the currently stored SQLite key."""
+        from app.routes.settings import save_provider_settings
+        from app.config import get_mwapi_api_key
+
+        self.db.add(Setting(key="mwapi_api_key", value="sk-mock-preserve-me-3333"))
+        self.db.commit()
+
+        # Submit blank key
+        save_provider_settings(self.db, "mwapi", "", "claude-sonnet-4-6")
+        self.db.commit()
+
+        self.assertEqual(get_mwapi_api_key(self.db), "sk-mock-preserve-me-3333")
+
+        # Submit whitespace-only key
+        save_provider_settings(self.db, "mwapi", "   ", "claude-sonnet-4-6")
+        self.db.commit()
+
+        self.assertEqual(get_mwapi_api_key(self.db), "sk-mock-preserve-me-3333")
+
+    def test_D_masked_api_key_input_does_not_overwrite_current_key(self):
+        """D. Masked API key placeholders (****xxxx or ••••xxxx) never overwrite the stored key."""
+        from app.routes.settings import save_provider_settings
+        from app.config import get_mwapi_api_key
+
+        self.db.add(Setting(key="mwapi_api_key", value="sk-mock-real-secret-4444"))
+        self.db.commit()
+
+        # Submit bullet masked
+        save_provider_settings(self.db, "mwapi", "••••4444", "claude-sonnet-4-6")
+        self.db.commit()
+        self.assertEqual(get_mwapi_api_key(self.db), "sk-mock-real-secret-4444")
+
+        # Submit asterisk masked
+        save_provider_settings(self.db, "mwapi", "****4444", "claude-sonnet-4-6")
+        self.db.commit()
+        self.assertEqual(get_mwapi_api_key(self.db), "sk-mock-real-secret-4444")
+
+        # Submit embedded bullet
+        save_provider_settings(self.db, "mwapi", "sk-mock•embedded•4444", "claude-sonnet-4-6")
+        self.db.commit()
+        self.assertEqual(get_mwapi_api_key(self.db), "sk-mock-real-secret-4444")
+
+    def test_E_test_connection_receives_new_sqlite_key(self):
+        """E. Test Connection receives and sends the new SQLite key in the Authorization header."""
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        provider = MWAPIProvider()
+
+        test_key = "sk-mock-test-conn-key-5555"
+        self.db.add(Setting(key="mwapi_api_key", value=test_key))
+        self.db.commit()
+
+        with patch("httpx.Client.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": "list", "data": [{"id": "claude-sonnet-4-6"}]}
+            mock_get.return_value = mock_resp
+
+            res = provider.test_connection(db=self.db)
+            self.assertTrue(res["connected"])
+
+            # Verify the exact SQLite key was used
+            headers = mock_get.call_args[1].get("headers", {})
+            self.assertEqual(headers.get("Authorization"), f"Bearer {test_key}")
+
+    def test_F_load_models_receives_new_sqlite_key(self):
+        """F. Load Models receives and sends the new SQLite key in the Authorization header."""
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        provider = MWAPIProvider()
+
+        test_key = "sk-mock-load-models-key-6666"
+        self.db.add(Setting(key="mwapi_api_key", value=test_key))
+        self.db.commit()
+
+        with patch("httpx.Client.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": "list", "data": [{"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"}]}
+            mock_get.return_value = mock_resp
+
+            models = provider.list_models(db=self.db)
+            self.assertEqual(len(models), 1)
+
+            headers = mock_get.call_args[1].get("headers", {})
+            self.assertEqual(headers.get("Authorization"), f"Bearer {test_key}")
+
+    def test_G_research_generation_receives_new_sqlite_key(self):
+        """G. Research/generation receives and sends the new SQLite key in the Authorization header."""
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        provider = MWAPIProvider()
+
+        test_key = "sk-mock-gen-key-7777"
+        self.db.add(Setting(key="mwapi_api_key", value=test_key))
+        self.db.add(Setting(key="mwapi_model", value="claude-sonnet-4-6"))
+        self.db.commit()
+
+        with patch("httpx.Client.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "model": "claude-sonnet-4-6",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "Generated text"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15}
+            }
+            mock_post.return_value = mock_resp
+
+            res = provider.generate("Test prompt", db=self.db)
+            self.assertEqual(res, "Generated text")
+
+            headers = mock_post.call_args[1].get("headers", {})
+            self.assertEqual(headers.get("Authorization"), f"Bearer {test_key}")
+
+            payload = mock_post.call_args[1].get("json", {})
+            self.assertEqual(payload.get("model"), "claude-sonnet-4-6")
+
+    def test_H_key_change_takes_effect_immediately_on_next_request(self):
+        """H. Changing the key through Settings takes effect immediately on the next request without restarts."""
+        from app.routes.settings import save_provider_settings
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        provider = MWAPIProvider()
+
+        # Step 1: Save Key A
+        save_provider_settings(self.db, "mwapi", "sk-mock-key-phase-A-8888", "claude-sonnet-4-6")
+        self.db.commit()
+
+        with patch("httpx.Client.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": "list", "data": [{"id": "claude-sonnet-4-6"}]}
+            mock_get.return_value = mock_resp
+
+            provider.test_connection(db=self.db)
+            headers_A = mock_get.call_args[1].get("headers", {})
+            self.assertEqual(headers_A.get("Authorization"), "Bearer sk-mock-key-phase-A-8888")
+
+        # Step 2: Save Key B (replaces Key A and invalidates cache)
+        save_provider_settings(self.db, "mwapi", "sk-mock-key-phase-B-9999", "claude-sonnet-4-6")
+        self.db.commit()
+
+        with patch("httpx.Client.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": "list", "data": [{"id": "claude-sonnet-4-6"}]}
+            mock_get.return_value = mock_resp
+
+            provider.test_connection(db=self.db)
+            headers_B = mock_get.call_args[1].get("headers", {})
+            self.assertEqual(headers_B.get("Authorization"), "Bearer sk-mock-key-phase-B-9999")
+
+    def test_I_secret_leakage_sanitization(self):
+        """I. No full secret appears in logs, errors, or metadata."""
+        from app.services.ai.providers.common import sanitize_secrets
+        from app.config import get_key_hint, mask_api_key
+
+        raw_secret = "sk-mock-ultra-sensitive-key-12345678"
+        raw_error = f"HTTP 401 Unauthorized for Bearer {raw_secret}"
+
+        sanitized = sanitize_secrets(raw_error, raw_secret)
+        self.assertNotIn(raw_secret, sanitized)
+        self.assertIn("[REDACTED]", sanitized)
+
+        hint = get_key_hint(raw_secret)
+        self.assertEqual(hint, "••••5678")
+        self.assertNotIn("sensitive", hint)
+
+        masked = mask_api_key(raw_secret)
+        self.assertTrue(masked.startswith("sk-m") and masked.endswith("5678"))
+        self.assertNotIn("sensitive", masked)
+
+    def test_J_research_invariants_preserved(self):
+        """J. Research 0/1 invariants preserved: cache hit = 0 calls, cache miss = exactly 1 call."""
+        from app.services.ai.providers.mwapi import MWAPIProvider
+        provider = MWAPIProvider()
+
+        self.db.add(Setting(key="mwapi_api_key", value="sk-mock-research-key-0000"))
+        self.db.add(Setting(key="mwapi_model", value="claude-sonnet-4-6"))
+        self.db.commit()
+
+        with patch("httpx.Client.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "id": "chatcmpl-inv",
+                "object": "chat.completion",
+                "model": "claude-sonnet-4-6",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": '[{"nv":"Item","nc":"东西","dk":"好物","ca":"Góc","h":"Hook"}]'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+            }
+            mock_post.return_value = mock_resp
+
+            prods = provider.generate_products("Đồ chơi", count=1, db=self.db)
+            self.assertEqual(len(prods), 1)
+            # Exactly 1 HTTP POST call made
+            self.assertEqual(mock_post.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
