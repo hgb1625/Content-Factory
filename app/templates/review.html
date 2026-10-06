@@ -1,145 +1,306 @@
 {% extends "base.html" %}
 
 {% block title %}Review Queue - AI Content Factory{% endblock %}
-{% block page_title %}Hàng Đợi Duyệt Video (Review Queue){% endblock %}
+{% block page_title %}{% endblock %}
 
 {% block content %}
-<!-- Manual Import Panel -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-plus-circle-fill me-2 text-primary"></i>Thêm Video Thủ Công (Manual Import)</span>
-                <span class="small text-secondary">Hỗ trợ dán link Douyin có hoặc không kèm lượt xem</span>
-            </div>
-            <div class="card-body">
-                {% if message %}
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="bi bi-check-circle-fill me-2"></i> {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endif %}
-                {% if error %}
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endif %}
-
-                <form method="POST" action="/videos/manual-import" class="row g-3 align-items-end">
-                    <div class="col-md-3">
-                        <label class="form-label small fw-bold">Sản phẩm liên kết:</label>
-                        <select class="form-select" name="product_id">
-                            <option value="">-- Chọn sản phẩm (Tùy chọn) --</option>
-                            {% for p in products %}
-                            <option value="{{ p.product_id }}">{{ p.product_id }} - {{ p.name_vietnamese }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-5">
-                        <label class="form-label small fw-bold">Douyin URL <span class="text-danger">*</span>:</label>
-                        <input type="text" class="form-control" name="douyin_url" placeholder="https://v.douyin.com/... hoặc dán toàn bộ văn bản chia sẻ" required>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold">Lượt xem (tùy chọn):</label>
-                        <input type="text" class="form-control" name="views" placeholder="Ví dụ: 125000">
-                    </div>
-                    <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100 fw-bold">
-                            <i class="bi bi-plus-lg me-1"></i> ADD VIDEO
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-baseline mb-4">
+    <div>
+        <h4 class="mb-1 text-white fw-semibold">Review Queue</h4>
+        <p class="text-secondary small mb-0">Tìm và chọn video trước khi đưa vào sản xuất</p>
+    </div>
+    <div>
+        {% if videos %}
+        <button class="btn btn-primary btn-sm" id="btnApproveSelected">
+            <i class="bi bi-check2 me-1"></i> Duyệt video đã chọn
+        </button>
+        {% endif %}
     </div>
 </div>
 
-<!-- Review Queue Table -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-3">
-                    <span class="fw-bold"><i class="bi bi-filter-square me-2 text-warning"></i>Video Chờ Duyệt (FOUND: {{ videos|length }})</span>
-                    <div class="btn-group btn-group-sm">
-                        <a href="/review" class="btn {% if sort != 'views' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Mới nhất</a>
-                        <a href="/review?sort=views" class="btn {% if sort == 'views' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Lượt xem cao → thấp</a>
-                    </div>
+<!-- Unified Intake Section (Search & Manual Add) -->
+<div class="search-surface mb-4">
+    <!-- Segmented Tab Switcher -->
+    <div class="d-flex align-items-center mb-3">
+        <div class="segment-nav">
+            <button type="button" class="segment-btn active" id="tabBtnSearch" onclick="switchIntakeTab('search')">
+                <i class="bi bi-search me-1"></i> Tìm kiếm Douyin
+            </button>
+            <button type="button" class="segment-btn" id="tabBtnManual" onclick="switchIntakeTab('manual')">
+                <i class="bi bi-link-45deg me-1"></i> Dán link trực tiếp
+            </button>
+        </div>
+    </div>
+
+    {% if message %}
+    <div class="calm-banner calm-success mb-3 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-check-circle me-2"></i> {{ message }}</span>
+        <button type="button" class="btn-close btn-close-white small" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="calm-banner calm-danger mb-3 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-exclamation-triangle me-2"></i> {{ error }}</span>
+        <button type="button" class="btn-close btn-close-white small" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Section 1: Search Form -->
+    <div id="intakeSearchSection">
+        <form id="douyinBrowserSearchForm">
+            <!-- Row 1: Primary Search Controls -->
+            <div class="d-flex align-items-center gap-2 flex-wrap flex-md-nowrap">
+                <select class="form-select form-select-sm" id="browserSearchProvider" name="provider" style="min-width: 230px; width: auto;">
+                    <option value="serpapi" selected>Web Index · Không cần đăng nhập</option>
+                    <option value="browser">Douyin Live · Trình duyệt</option>
+                </select>
+
+                <div class="flex-grow-1">
+                    <input type="text" class="form-control form-control-sm" id="browserSearchKeyword" placeholder="Nhập từ khóa Douyin (ví dụ: 宿舍迷你电饭煲)..." required>
                 </div>
-                <button class="btn btn-sm btn-success" id="btnApproveSelected">
-                    <i class="bi bi-check2-all me-1"></i> APPROVE SELECTED (Duyệt các mục đã chọn)
+
+                <button type="submit" class="btn btn-primary btn-sm px-3 text-nowrap" id="btnSearchDouyin">
+                    <span id="btnSearchDouyinSpinner" class="spinner-border spinner-border-sm me-1 d-none"></span>
+                    <span id="btnSearchDouyinIcon"><i class="bi bi-search me-1"></i> Tìm video</span>
+                </button>
+
+                <button type="button" class="btn btn-ghost btn-sm text-secondary text-nowrap" id="btnToggleOptions" onclick="toggleSearchOptions()">
+                    Tùy chọn <i class="bi bi-chevron-down ms-1" id="optionsChevron"></i>
                 </button>
             </div>
-            <div class="card-body p-0">
-                {% if videos %}
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead>
-                            <tr>
-                                <th style="width: 40px;"><input type="checkbox" id="selectAll"></th>
-                                <th>Thumbnail</th>
-                                <th>Video ID</th>
-                                <th>Sản Phẩm</th>
-                                <th>Lượt Xem</th>
-                                <th>Douyin URL</th>
-                                <th>Thao Tác</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for v in videos %}
-                            <tr id="row-{{ v.video_id }}">
-                                <td><input type="checkbox" class="video-select-checkbox" value="{{ v.video_id }}"></td>
-                                <td>
-                                    {% if v.thumbnail %}
-                                    <img src="{{ v.thumbnail }}" alt="thumb" class="rounded" style="width: 50px; height: 50px; object-fit: cover;">
-                                    {% else %}
-                                    <div class="bg-secondary-subtle rounded d-flex align-items-center justify-content-center text-secondary" style="width: 50px; height: 50px;">
-                                        <i class="bi bi-film fs-5"></i>
-                                    </div>
-                                    {% endif %}
-                                </td>
-                                <td class="fw-bold text-white">{{ v.video_id }}</td>
-                                <td>{{ v.product.name_vietnamese if v.product else '-' }}</td>
-                                <td>{{ v.views or '-' }}</td>
-                                <td>
-                                    <a href="{{ v.douyin_url }}" target="_blank" class="text-truncate d-inline-block text-decoration-none" style="max-width: 250px;">
-                                        {{ v.douyin_url }}
-                                    </a>
-                                </td>
-                                <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="{{ v.douyin_url }}" target="_blank" class="btn btn-outline-secondary" title="Mở URL">
-                                            <i class="bi bi-box-arrow-up-right"></i>
-                                        </a>
-                                        <button class="btn btn-outline-success btn-approve-single" data-id="{{ v.video_id }}" title="Duyệt video">
-                                            <i class="bi bi-check-lg"></i> Approve
-                                        </button>
-                                        <button class="btn btn-outline-danger btn-reject-single" data-id="{{ v.video_id }}" title="Từ chối">
-                                            <i class="bi bi-x-lg"></i> Reject
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+
+            <!-- Row 2: Secondary Options (Tùy chọn thêm) -->
+            <div id="searchSecondaryOptions" class="d-none mt-2 pt-2 border-top border-dark-subtle row g-2 align-items-center">
+                <div class="col-md-5 col-lg-4">
+                    <label class="form-label small text-muted mb-1">Sản phẩm liên kết</label>
+                    <select class="form-select form-select-sm" id="browserSearchProduct" name="product_id">
+                        <option value="">-- Chọn sản phẩm (tùy chọn) --</option>
+                        {% for p in products %}
+                        <option value="{{ p.product_id }}">{{ p.product_id }} - {{ p.name_vietnamese }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                {% else %}
-                <div class="p-5 text-center text-secondary">
-                    <i class="bi bi-check-circle fs-1 text-success d-block mb-3"></i>
-                    Không có video nào chờ duyệt. Thêm video mới bằng khung bên trên!
+                <div class="col-md-3 col-lg-2">
+                    <label class="form-label small text-muted mb-1">Số lượng kết quả</label>
+                    <input type="number" class="form-control form-control-sm" id="browserSearchLimit" value="10" min="1" max="20">
                 </div>
-                {% endif %}
+            </div>
+        </form>
+
+        <!-- Contextual Browser Controls (Progressive Disclosure: Only shown for 'browser' provider) -->
+        <div id="browserControlsStrip" class="browser-context-strip d-none mt-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="small text-secondary">Trình duyệt:</span>
+                    <span id="browserStatusBadge" class="status-pill">
+                        <span class="status-dot dot-muted" id="browserStatusDot"></span>
+                        <span id="browserStatusText">NOT_CONNECTED</span>
+                    </span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnConnectBrowser">
+                        <i class="bi bi-window me-1"></i> Connect Browser
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshStatus" title="Kiểm tra lại sau khi thao tác">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Kiểm tra lại
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none text-danger" id="btnCloseBrowser">
+                        <i class="bi bi-x-lg me-1"></i> Đóng
+                    </button>
+                </div>
             </div>
         </div>
+
+        <!-- Action Alert Box (Login / Verification Required) -->
+        <div id="browserAlertBox" class="calm-banner calm-warning d-none mt-3" role="alert">
+            <div class="d-flex align-items-start gap-2">
+                <i id="browserAlertIcon" class="bi bi-info-circle mt-1 text-secondary"></i>
+                <div>
+                    <strong id="browserAlertTitle" class="text-white d-block"></strong>
+                    <div id="browserAlertMsg" class="small text-secondary mt-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Results Area -->
+        <div id="browserSearchResultsContainer" class="mt-3 pt-3 border-top border-dark-subtle d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <div class="small text-secondary">
+                    Tìm thấy <strong id="searchResultsCount" class="text-white">0</strong> video
+                </div>
+                <div>
+                    <button type="button" class="btn btn-sm btn-ghost text-secondary" id="btnSelectAllResults">
+                        Chọn tất cả video mới
+                    </button>
+                </div>
+            </div>
+            
+            <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width: 36px;"></th>
+                            <th style="width: 44px;">Thumb</th>
+                            <th>Tiêu đề / Video ID</th>
+                            <th>Tác giả</th>
+                            <th>Nguồn</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody id="searchResultsTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Contextual Bottom Action Bar (Only shows when results are selectable) -->
+            <div id="resultsActionBar" class="bottom-selection-bar d-none">
+                <span class="small text-secondary" id="selectedResultsCountText">0 video đã chọn</span>
+                <button type="button" class="btn btn-sm btn-primary" id="btnImportSelected">
+                    <i class="bi bi-arrow-down-circle me-1"></i> Nhập video
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Direct URL Input -->
+    <div id="intakeManualSection" class="d-none">
+        <form method="POST" action="/videos/manual-import" class="row g-2 align-items-end">
+            <div class="col-lg-6 col-md-5">
+                <label class="form-label small text-secondary mb-1">Douyin URL</label>
+                <input type="text" class="form-control form-control-sm" name="douyin_url" placeholder="https://v.douyin.com/... hoặc dán văn bản chia sẻ" required>
+            </div>
+            <div class="col-lg-4 col-md-4">
+                <label class="form-label small text-secondary mb-1">Sản phẩm liên kết</label>
+                <select class="form-select form-select-sm" name="product_id">
+                    <option value="">-- Tùy chọn sản phẩm --</option>
+                    {% for p in products %}
+                    <option value="{{ p.product_id }}">{{ p.product_id }} - {{ p.name_vietnamese }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    Thêm video
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Review Queue Section -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="text-white fw-medium">Chờ duyệt</span>
+            <span class="text-secondary small">({{ videos|length }})</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <div class="segment-nav">
+                <a href="/review" class="segment-btn {% if sort != 'views' %}active{% endif %}">Mới nhất</a>
+                <a href="/review?sort=views" class="segment-btn {% if sort == 'views' %}active{% endif %}">Nhiều view nhất</a>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if videos %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 36px;"><input type="checkbox" id="selectAll" class="form-check-input"></th>
+                        <th style="width: 52px;">Thumb</th>
+                        <th>Video ID</th>
+                        <th>Sản phẩm</th>
+                        <th>Lượt xem</th>
+                        <th class="text-end">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in videos %}
+                    <tr id="row-{{ v.video_id }}">
+                        <td><input type="checkbox" class="video-select-checkbox form-check-input" value="{{ v.video_id }}"></td>
+                        <td>
+                            {% if v.thumbnail %}
+                            <img src="{{ v.thumbnail }}" alt="thumb" class="rounded" style="width: 40px; height: 40px; object-fit: cover;">
+                            {% else %}
+                            <div class="rounded d-flex align-items-center justify-content-center text-secondary" style="width: 40px; height: 40px; background: #181d28;">
+                                <i class="bi bi-film"></i>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="fw-medium text-white small font-monospace d-flex align-items-center gap-2">
+                                <span>{{ v.video_id }}</span>
+                                <a href="{{ v.douyin_url }}" target="_blank" class="text-secondary small" title="Mở trên Douyin">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </td>
+                        <td class="small text-secondary">{{ v.product.name_vietnamese if v.product else '-' }}</td>
+                        <td class="small text-secondary">{{ v.views or '-' }}</td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-1">
+                                <button class="btn btn-sm btn-ghost text-success btn-approve-single" data-id="{{ v.video_id }}" title="Duyệt video">
+                                    <i class="bi bi-check2"></i> Duyệt
+                                </button>
+                                <button class="btn btn-sm btn-ghost text-secondary btn-reject-single" data-id="{{ v.video_id }}" title="Từ chối">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <!-- Light Empty State -->
+        <div class="empty-state-light">
+            <div class="empty-state-icon"><i class="bi bi-inbox"></i></div>
+            <div class="empty-state-title">Chưa có video</div>
+            <p class="empty-state-desc">Tìm video hoặc dán link để bắt đầu</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-    // Select all checkbox
+    // Tab switcher between Search and Direct URL
+    window.switchIntakeTab = function(tab) {
+        const searchSec = document.getElementById('intakeSearchSection');
+        const manualSec = document.getElementById('intakeManualSection');
+        const btnSearch = document.getElementById('tabBtnSearch');
+        const btnManual = document.getElementById('tabBtnManual');
+
+        if (tab === 'search') {
+            searchSec?.classList.remove('d-none');
+            manualSec?.classList.add('d-none');
+            btnSearch?.classList.add('active');
+            btnManual?.classList.remove('active');
+        } else {
+            searchSec?.classList.add('d-none');
+            manualSec?.classList.remove('d-none');
+            btnSearch?.classList.remove('active');
+            btnManual?.classList.add('active');
+        }
+    };
+
+    // Toggle secondary search options (Sản phẩm, Số lượng)
+    window.toggleSearchOptions = function() {
+        const opt = document.getElementById('searchSecondaryOptions');
+        const chevron = document.getElementById('optionsChevron');
+        if (opt) {
+            opt.classList.toggle('d-none');
+            const isHidden = opt.classList.contains('d-none');
+            if (chevron) {
+                chevron.className = isHidden ? 'bi bi-chevron-down ms-1' : 'bi bi-chevron-up ms-1';
+            }
+        }
+    };
+
+    // Select all checkbox in Review Queue
     document.getElementById('selectAll')?.addEventListener('change', function() {
         document.querySelectorAll('.video-select-checkbox').forEach(cb => cb.checked = this.checked);
     });
@@ -218,5 +379,334 @@
             alert('Lỗi kết nối: ' + e.message);
         }
     });
+
+    // =========================================================================
+    // Douyin Multi-Search Client Logic (Clean & Calm Progressive Disclosure)
+    // =========================================================================
+    const browserControlsStrip = document.getElementById('browserControlsStrip');
+    const browserBadge = document.getElementById('browserStatusBadge');
+    const browserStatusText = document.getElementById('browserStatusText');
+    const browserStatusDot = document.getElementById('browserStatusDot');
+    const btnConnect = document.getElementById('btnConnectBrowser');
+    const btnRefresh = document.getElementById('btnRefreshStatus');
+    const btnClose = document.getElementById('btnCloseBrowser');
+    const btnSearch = document.getElementById('btnSearchDouyin');
+    const btnSearchSpinner = document.getElementById('btnSearchDouyinSpinner');
+    const btnSearchIcon = document.getElementById('btnSearchDouyinIcon');
+    const searchForm = document.getElementById('douyinBrowserSearchForm');
+    const searchKeywordInput = document.getElementById('browserSearchKeyword');
+    const searchLimitInput = document.getElementById('browserSearchLimit');
+    const searchProductSelect = document.getElementById('browserSearchProduct');
+    const searchProviderSelect = document.getElementById('browserSearchProvider');
+    const alertBox = document.getElementById('browserAlertBox');
+    const alertTitle = document.getElementById('browserAlertTitle');
+    const alertMsg = document.getElementById('browserAlertMsg');
+    const alertIcon = document.getElementById('browserAlertIcon');
+    const resultsContainer = document.getElementById('browserSearchResultsContainer');
+    const resultsCountSpan = document.getElementById('searchResultsCount');
+    const resultsTbody = document.getElementById('searchResultsTableBody');
+    const resultsActionBar = document.getElementById('resultsActionBar');
+    const selectedResultsCountText = document.getElementById('selectedResultsCountText');
+    const btnSelectAll = document.getElementById('btnSelectAllResults');
+    const btnImport = document.getElementById('btnImportSelected');
+
+    let currentSearchResults = [];
+    let currentBrowserState = 'NOT_CONNECTED';
+
+    function updateSearchButtonState() {
+        const provider = searchProviderSelect ? searchProviderSelect.value : 'serpapi';
+        if (provider === 'serpapi') {
+            btnSearch.disabled = false;
+        } else {
+            btnSearch.disabled = (currentBrowserState !== 'CONNECTED');
+        }
+    }
+
+    function updateProviderVisibility() {
+        const provider = searchProviderSelect ? searchProviderSelect.value : 'serpapi';
+        if (provider === 'browser') {
+            browserControlsStrip?.classList.remove('d-none');
+            if (currentBrowserState === 'LOGIN_REQUIRED') {
+                showAlert('warning', 'Yêu cầu đăng nhập Douyin', 'Vui lòng đăng nhập Douyin trong cửa sổ trình duyệt vừa mở, sau đó bấm Kiểm tra lại.');
+            } else if (currentBrowserState === 'VERIFICATION_REQUIRED') {
+                showAlert('danger', 'Yêu cầu xác minh Douyin (CAPTCHA)', 'Douyin yêu cầu xác minh bảo mật. Hãy hoàn tất trong cửa sổ trình duyệt, sau đó bấm Kiểm tra lại.');
+            }
+        } else {
+            browserControlsStrip?.classList.add('d-none');
+            hideAlert();
+        }
+        updateSearchButtonState();
+    }
+
+    searchProviderSelect?.addEventListener('change', updateProviderVisibility);
+
+    function updateBadge(state, message) {
+        currentBrowserState = state;
+        if (browserStatusText) browserStatusText.textContent = state;
+        if (browserStatusDot) {
+            browserStatusDot.className = 'status-dot';
+            if (state === 'CONNECTED') {
+                browserStatusDot.classList.add('dot-success');
+                btnClose?.classList.remove('d-none');
+                hideAlert();
+            } else if (state === 'BROWSER_OPEN') {
+                browserStatusDot.classList.add('dot-info');
+                btnClose?.classList.remove('d-none');
+                hideAlert();
+            } else if (state === 'SEARCHING') {
+                browserStatusDot.classList.add('dot-accent');
+                btnClose?.classList.remove('d-none');
+            } else if (state === 'LOGIN_REQUIRED') {
+                browserStatusDot.classList.add('dot-warning');
+                btnClose?.classList.remove('d-none');
+                if (searchProviderSelect?.value === 'browser') {
+                    showAlert(
+                        'warning',
+                        'Yêu cầu đăng nhập Douyin',
+                        message || 'Vui lòng đăng nhập Douyin trong cửa sổ trình duyệt vừa mở. Sau đó bấm Kiểm tra lại.'
+                    );
+                }
+            } else if (state === 'VERIFICATION_REQUIRED') {
+                browserStatusDot.classList.add('dot-danger');
+                btnClose?.classList.remove('d-none');
+                if (searchProviderSelect?.value === 'browser') {
+                    showAlert(
+                        'danger',
+                        'Yêu cầu xác minh Douyin (CAPTCHA)',
+                        message || 'Douyin yêu cầu xác minh bảo mật. Hãy hoàn tất trong cửa sổ trình duyệt, sau đó bấm Kiểm tra lại.'
+                    );
+                }
+            } else if (state === 'NOT_CONNECTED') {
+                browserStatusDot.classList.add('dot-muted');
+                btnClose?.classList.add('d-none');
+                hideAlert();
+            } else {
+                browserStatusDot.classList.add('dot-danger');
+                btnClose?.classList.add('d-none');
+            }
+        }
+        updateSearchButtonState();
+    }
+
+    function showAlert(type, title, message) {
+        alertBox.className = `calm-banner calm-${type === 'danger' ? 'danger' : 'warning'} mt-3`;
+        alertTitle.textContent = title;
+        alertMsg.textContent = message;
+        alertBox.classList.remove('d-none');
+    }
+
+    function hideAlert() {
+        alertBox.classList.add('d-none');
+    }
+
+    async function checkBrowserStatus() {
+        try {
+            const res = await fetch('/api/douyin-browser/status');
+            const data = await res.json();
+            updateBadge(data.state, data.message);
+        } catch (e) {
+            updateBadge('NOT_CONNECTED');
+        }
+    }
+
+    // Connect button
+    btnConnect?.addEventListener('click', async function() {
+        btnConnect.disabled = true;
+        btnConnect.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang kết nối...';
+        try {
+            const res = await fetch('/api/douyin-browser/open', { method: 'POST' });
+            const data = await res.json();
+            if (data.state) {
+                updateBadge(data.state, data.message);
+            }
+            if (data.error) {
+                showAlert('danger', 'Lỗi khởi chạy trình duyệt', data.error);
+            }
+        } catch (e) {
+            showAlert('danger', 'Lỗi kết nối', e.message);
+        } finally {
+            btnConnect.disabled = false;
+            btnConnect.innerHTML = '<i class="bi bi-window me-1"></i> Connect Browser';
+        }
+    });
+
+    // Refresh Status button
+    btnRefresh?.addEventListener('click', async function() {
+        btnRefresh.disabled = true;
+        btnRefresh.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang kiểm tra...';
+        try {
+            await checkBrowserStatus();
+        } finally {
+            btnRefresh.disabled = false;
+            btnRefresh.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Kiểm tra lại';
+        }
+    });
+
+    // Close button
+    btnClose?.addEventListener('click', async function() {
+        try {
+            await fetch('/api/douyin-browser/close', { method: 'POST' });
+            updateBadge('NOT_CONNECTED');
+            resultsContainer.classList.add('d-none');
+            resultsTbody.innerHTML = '';
+        } catch (e) {
+            alert('Lỗi đóng trình duyệt: ' + e.message);
+        }
+    });
+
+    // Update bottom selection action bar based on checked results
+    function updateSelectionActionBar() {
+        const checkedBoxes = document.querySelectorAll('.browser-result-checkbox:checked:not(:disabled)');
+        const count = checkedBoxes.length;
+        if (count > 0) {
+            resultsActionBar?.classList.remove('d-none');
+            if (selectedResultsCountText) {
+                selectedResultsCountText.textContent = `${count} video đã chọn`;
+            }
+        } else {
+            resultsActionBar?.classList.add('d-none');
+        }
+    }
+
+    // Search form submit
+    searchForm?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const kw = searchKeywordInput.value.trim();
+        const limit = parseInt(searchLimitInput?.value) || 10;
+        const provider = searchProviderSelect ? searchProviderSelect.value : 'serpapi';
+        if (!kw) return;
+
+        btnSearch.disabled = true;
+        btnSearchSpinner.classList.remove('d-none');
+        btnSearchIcon.classList.add('d-none');
+        hideAlert();
+        resultsContainer.classList.add('d-none');
+        resultsTbody.innerHTML = '';
+        resultsActionBar?.classList.add('d-none');
+
+        try {
+            const res = await fetch('/api/douyin-browser/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ keyword: kw, limit: limit, provider: provider })
+            });
+            const data = await res.json();
+            if (data.state && provider === 'browser') {
+                updateBadge(data.state);
+            }
+
+            if (data.action_required) {
+                showAlert('warning', data.action_required, data.message);
+                return;
+            }
+
+            if (!data.success) {
+                showAlert('danger', 'Lỗi tìm kiếm', data.error || data.message || 'Không thể tìm kiếm');
+                return;
+            }
+
+            // Render search results
+            currentSearchResults = data.videos || [];
+            resultsCountSpan.textContent = currentSearchResults.length;
+
+            if (currentSearchResults.length === 0) {
+                resultsTbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary py-3">Không tìm thấy video nào. Hãy thử từ khóa khác.</td></tr>';
+            } else {
+                resultsTbody.innerHTML = currentSearchResults.map((v, idx) => `
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="browser-result-checkbox form-check-input" data-index="${idx}" ${v.already_imported ? 'disabled' : 'checked'}>
+                        </td>
+                        <td>
+                            ${v.thumbnail_url ? `<img src="${v.thumbnail_url}" class="rounded" style="width: 36px; height: 36px; object-fit: cover;">` : '<div class="rounded d-flex align-items-center justify-content-center text-secondary" style="width: 36px; height: 36px; background: #181d28;"><i class="bi bi-film"></i></div>'}
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <a href="${v.canonical_url}" target="_blank" class="fw-medium text-white small text-decoration-none" title="Mở trên Douyin">
+                                    ${v.title || 'Video ' + v.video_id}
+                                    <i class="bi bi-box-arrow-up-right ms-1 text-secondary" style="font-size: 0.72rem;"></i>
+                                </a>
+                            </div>
+                            <div class="text-secondary small font-monospace" style="font-size: 0.75rem;">${v.video_id}</div>
+                        </td>
+                        <td>
+                            <span class="small text-secondary">${v.creator || '-'}</span>
+                        </td>
+                        <td>
+                            <span class="status-pill">${v.source === 'serpapi' ? 'Web Index' : 'Douyin Live'}</span>
+                        </td>
+                        <td>
+                            ${v.already_imported 
+                                ? '<span class="status-pill"><span class="status-dot dot-muted"></span> Đã nhập</span>' 
+                                : '<span class="status-pill active"><span class="status-dot dot-success"></span> Mới</span>'}
+                        </td>
+                    </tr>
+                `).join('');
+
+                // Add event listeners to individual checkboxes
+                document.querySelectorAll('.browser-result-checkbox').forEach(cb => {
+                    cb.addEventListener('change', updateSelectionActionBar);
+                });
+            }
+            resultsContainer.classList.remove('d-none');
+            updateSelectionActionBar();
+
+        } catch (e) {
+            showAlert('danger', 'Lỗi kết nối', e.message);
+        } finally {
+            btnSearch.disabled = false;
+            btnSearchSpinner.classList.add('d-none');
+            btnSearchIcon.classList.remove('d-none');
+        }
+    });
+
+    // Select all results toggle
+    btnSelectAll?.addEventListener('click', function() {
+        const checkboxes = document.querySelectorAll('.browser-result-checkbox:not(:disabled)');
+        const anyUnchecked = Array.from(checkboxes).some(cb => !cb.checked);
+        checkboxes.forEach(cb => cb.checked = anyUnchecked);
+        updateSelectionActionBar();
+    });
+
+    // Import selected
+    btnImport?.addEventListener('click', async function() {
+        const checkedBoxes = document.querySelectorAll('.browser-result-checkbox:checked:not(:disabled)');
+        const selectedVideos = Array.from(checkedBoxes).map(cb => {
+            const idx = parseInt(cb.getAttribute('data-index'));
+            return currentSearchResults[idx];
+        }).filter(Boolean);
+
+        if (selectedVideos.length === 0) {
+            alert('Vui lòng chọn ít nhất một video mới để nhập.');
+            return;
+        }
+
+        const prodId = searchProductSelect?.value || null;
+        btnImport.disabled = true;
+        btnImport.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang nhập...';
+
+        try {
+            const res = await fetch('/api/douyin-browser/import-selected', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ videos: selectedVideos, product_id: prodId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Lỗi nhập video: ' + (data.errors?.join(', ') || 'Không thể nhập'));
+            }
+        } catch (e) {
+            alert('Lỗi kết nối: ' + e.message);
+        } finally {
+            btnImport.disabled = false;
+            btnImport.innerHTML = '<i class="bi bi-arrow-down-circle me-1"></i> Nhập video';
+        }
+    });
+
+    // Initial check on load
+    updateProviderVisibility();
+    checkBrowserStatus();
 </script>
 {% endblock %}

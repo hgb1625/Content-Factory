@@ -237,3 +237,114 @@ def api_download_video(video_id: str, db: Session = Depends(get_db)):
     result = downloader.download_and_attach(db, video_id=video_id)
     status_code = 200 if result.get("success") else 400
     return JSONResponse(content=result, status_code=status_code)
+
+
+# ==============================================================================
+# Douyin Browser-Assisted Search API Endpoints
+# ==============================================================================
+class DouyinBrowserSearchRequest(BaseModel):
+    keyword: str
+    limit: Optional[int] = 10
+    provider: Optional[str] = "serpapi"
+    force_refresh: Optional[bool] = False
+
+
+class DouyinBrowserImportItem(BaseModel):
+    canonical_url: str
+    video_id: Optional[str] = None
+    title: Optional[str] = None
+    creator: Optional[str] = None
+    views: Optional[str] = None
+    thumbnail: Optional[str] = None
+    source: Optional[str] = None
+
+
+class DouyinBrowserImportRequest(BaseModel):
+    videos: List[DouyinBrowserImportItem]
+    product_id: Optional[str] = None
+
+
+@router.get("/api/douyin-search/providers")
+def api_douyin_search_providers():
+    from app.services.douyin_search import douyin_search_manager
+    from app.config import get_serpapi_api_key
+    serpapi_configured = bool(get_serpapi_api_key())
+    providers = douyin_search_manager.list_providers()
+    for p in providers:
+        if p["id"] == "serpapi":
+            p["configured"] = serpapi_configured
+        else:
+            p["configured"] = True
+    return JSONResponse(content={"providers": providers})
+
+
+@router.post("/api/douyin-browser/open")
+def api_douyin_browser_open():
+    from app.services.douyin_browser_service import douyin_browser_service
+    result = douyin_browser_service.open_browser()
+    status_code = 200 if result.get("success") else 500
+    return JSONResponse(content=result, status_code=status_code)
+
+
+@router.get("/api/douyin-browser/status")
+def api_douyin_browser_status():
+    from app.services.douyin_browser_service import douyin_browser_service
+    status = douyin_browser_service.get_status()
+    return JSONResponse(content=status)
+
+
+@router.post("/api/douyin-browser/search")
+def api_douyin_browser_search(payload: DouyinBrowserSearchRequest, db: Session = Depends(get_db)):
+    from app.services.douyin_search import douyin_search_manager
+    selected_provider = (payload.provider or "serpapi").lower().strip()
+    result = douyin_search_manager.search(
+        keyword=payload.keyword,
+        limit=payload.limit or 10,
+        provider_id=selected_provider,
+        db=db,
+        force_refresh=bool(payload.force_refresh)
+    )
+    status_code = 200 if result.get("success") else 400
+    return JSONResponse(content=result, status_code=status_code)
+
+
+
+@router.post("/api/douyin-browser/close")
+def api_douyin_browser_close():
+    from app.services.douyin_browser_service import douyin_browser_service
+    result = douyin_browser_service.close_browser()
+    return JSONResponse(content=result)
+
+
+@router.post("/api/douyin-browser/import-selected")
+def api_douyin_browser_import_selected(payload: DouyinBrowserImportRequest, db: Session = Depends(get_db)):
+    imported_ids: List[str] = []
+    duplicate_ids: List[str] = []
+    errors: List[str] = []
+
+    for item in payload.videos:
+        res = douyin_service.add_video(
+            db=db,
+            douyin_url=item.canonical_url,
+            product_id=payload.product_id if payload.product_id and payload.product_id.strip() else None,
+            views=item.views,
+            thumbnail=item.thumbnail,
+            notes=item.title
+        )
+        if res.get("success"):
+            imported_ids.append(res["video_id"])
+        elif res.get("duplicate"):
+            duplicate_ids.append(res.get("video_id") or item.canonical_url)
+        else:
+            errors.append(res.get("error") or "Unknown error")
+
+    return JSONResponse(content={
+        "success": len(imported_ids) > 0 or len(duplicate_ids) > 0,
+        "imported_count": len(imported_ids),
+        "imported_ids": imported_ids,
+        "duplicate_count": len(duplicate_ids),
+        "duplicate_ids": duplicate_ids,
+        "errors": errors,
+        "message": f"Đã nhập {len(imported_ids)} video thành công ({len(duplicate_ids)} video đã tồn tại)."
+    })
+

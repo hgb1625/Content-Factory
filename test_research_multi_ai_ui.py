@@ -362,7 +362,10 @@ class TestResearchMultiAIUI(unittest.TestCase):
 
         mock_mgr = MagicMock()
         mock_mgr.get_active_provider.return_value = get_ai_manager().get_provider("openai")
-        mock_mgr.generate_products.return_value = SAMPLE_PRODUCTS
+        mock_mgr.generate_products.return_value = [
+            {**SAMPLE_PRODUCTS[0], "name_vietnamese": f"Sản phẩm gia dụng {i+1}"}
+            for i in range(5)
+        ]
         mock_get_manager.return_value = mock_mgr
 
         resp = self.client.post(

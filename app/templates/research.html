@@ -1,316 +1,295 @@
 {% extends "base.html" %}
 
 {% block title %}Product Research - AI Content Factory{% endblock %}
-{% block page_title %}Nghiên Cứu Sản Phẩm (Product Research){% endblock %}
+{% block page_title %}{% endblock %}
 
 {% block content %}
 <style>
 .btn-preset {
-    min-width: 44px;
-    font-weight: 600;
-    transition: all 0.15s ease-in-out;
+    min-width: 40px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-surface-elevated);
+    color: var(--text-secondary);
+}
+.btn-preset:hover {
+    color: var(--text-primary);
+    border-color: var(--border-muted);
 }
 .btn-preset.active {
-    background-color: #0dcaf0 !important;
-    color: #000 !important;
-    border-color: #0dcaf0 !important;
-    box-shadow: 0 0 8px rgba(13, 202, 240, 0.4);
+    background-color: var(--accent) !important;
+    color: #ffffff !important;
+    border-color: var(--accent) !important;
+    font-weight: 600;
 }
 .category-chip {
-    transition: all 0.15s ease-in-out;
-    border-radius: 12px;
+    transition: all 0.15s ease;
+    border-radius: 4px;
     white-space: nowrap;
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-surface-elevated);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    padding: 3px 8px;
+}
+.category-chip:hover {
+    color: var(--text-primary);
+    border-color: var(--border-muted);
 }
 .category-chip.active {
-    background-color: #0dcaf0 !important;
-    color: #000 !important;
-    border-color: #0dcaf0 !important;
+    background-color: var(--accent) !important;
+    color: #ffffff !important;
+    border-color: var(--accent) !important;
     font-weight: 600;
 }
 .niche-chip {
-    transition: all 0.15s ease-in-out;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    padding: 3px 10px;
+    transition: all 0.15s ease;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    padding: 3px 8px;
     white-space: nowrap;
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-surface-elevated);
+    color: var(--text-secondary);
 }
 .niche-chip:hover {
-    border-color: #0dcaf0;
-    color: #0dcaf0;
+    border-color: var(--accent);
+    color: var(--accent);
 }
 .niche-chip.active {
-    background-color: #0dcaf0 !important;
-    color: #000 !important;
-    border-color: #0dcaf0 !important;
+    background-color: var(--accent) !important;
+    color: #ffffff !important;
+    border-color: var(--accent) !important;
     font-weight: 600;
 }
 </style>
-<div class="row">
-    <div class="col-lg-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="bi bi-magic me-2 text-primary"></i>Tạo Danh Sách Sản Phẩm Tiềm Năng ({{ provider_info.provider_name if provider_info else 'AI Provider' }})
-            </div>
-            <div class="card-body">
-                <!-- Research Provider Status Box -->
-                <div id="researchProviderStatusBox" class="gemini-status-box mb-3">
-                    <div class="d-flex align-items-center justify-content-between mb-1">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-cpu me-2 text-primary"></i>
-                            <span class="fw-bold text-white" id="researchProviderName">{{ provider_info.provider_name if provider_info else 'AI Provider' }}</span>
-                        </div>
-                        <span class="badge bg-secondary gemini-status-model" id="researchModelBadge">{{ provider_info.model if provider_info else 'N/A' }}</span>
-                    </div>
-                    <div class="d-flex align-items-center gap-2 mt-1">
-                        <span class="gemini-status-dot" id="researchStatusDot">●</span>
-                        <span class="gemini-status-msg fw-semibold" id="researchStatusMsg">
-                            {{ provider_info.status_msg if provider_info else 'Chưa kiểm tra trạng thái' }}
-                        </span>
-                    </div>
-                    <div class="gemini-status-hint text-secondary small mt-1" id="researchStatusHint">
-                        {{ provider_info.status_hint if provider_info else '' }}
-                    </div>
-                </div>
 
-                {% if provider_info and provider_info.provider_id != 'gemini' and gemini_status %}
-                <div class="p-2 mb-3 rounded bg-dark border border-secondary-subtle small text-secondary">
-                    <span class="text-muted"><i class="bi bi-info-circle me-1"></i>Chẩn đoán Gemini riêng:</span>
-                    <span class="text-light fw-semibold">{{ gemini_status.status }}</span> &mdash;
-                    <span>{{ gemini_status.message }}</span>
-                </div>
-                {% endif %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-baseline mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1 text-white fw-semibold">Nghiên cứu sản phẩm</h4>
+        <p class="text-secondary small mb-0">Tạo Danh Sách Sản Phẩm Tiềm Năng ({{ provider_info.provider_name if provider_info else 'AI Provider' }}) với 1 request duy nhất</p>
+    </div>
+    <div>
+        <a href="/products" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-box-seam me-1"></i> Danh sách sản phẩm
+        </a>
+    </div>
+</div>
 
-                {% if error %}
-                <div class="alert alert-dismissible fade show mb-3
-                    {% if error_type == 'QUOTA_EXCEEDED' %}alert-warning
-                    {% elif error_type in ['AUTH_ERROR', 'NETWORK_ERROR', 'ERROR'] %}alert-danger
-                    {% elif error_type in ['BUSY', 'RATE_LIMITED'] %}alert-warning
-                    {% else %}alert-danger{% endif %}" role="alert">
-                    <div class="d-flex align-items-start gap-2">
-                        <i class="bi
-                            {% if error_type == 'QUOTA_EXCEEDED' %}bi-clock-history text-warning
-                            {% elif error_type == 'BUSY' %}bi-hourglass-split text-warning
-                            {% elif error_type == 'RATE_LIMITED' %}bi-speedometer2 text-warning
-                            {% elif error_type == 'AUTH_ERROR' %}bi-key text-danger
-                            {% elif error_type == 'NETWORK_ERROR' %}bi-wifi-off text-danger
-                            {% else %}bi-exclamation-triangle-fill text-danger{% endif %} mt-1 flex-shrink-0"></i>
-                        <div>
-                            <div class="fw-semibold">
-                                {% if error_title %}
-                                    {{ error_title }}
-                                {% elif error_type == 'QUOTA_EXCEEDED' %}
-                                    {{ provider_info.provider_name if provider_info else 'AI' }} đã hết hạn mức API / quota
-                                {% elif error_type == 'BUSY' %}
-                                    {{ provider_info.provider_name if provider_info else 'AI' }} đang quá tải
-                                {% elif error_type == 'RATE_LIMITED' %}
-                                    {{ provider_info.provider_name if provider_info else 'AI' }} đang bị giới hạn tạm thời
-                                {% elif error_type == 'AUTH_ERROR' %}
-                                    Lỗi xác thực {{ provider_info.provider_name if provider_info else 'AI' }}
-                                {% elif error_type == 'NETWORK_ERROR' %}
-                                    Không kết nối được {{ provider_info.provider_name if provider_info else 'AI' }}
-                                {% else %}
-                                    Lỗi {{ provider_info.provider_name if provider_info else 'AI' }}
-                                {% endif %}
-                            </div>
-                            <div class="mt-1">{{ error }}</div>
-                            {% if error_type == 'QUOTA_EXCEEDED' %}
-                            <div class="small text-secondary mt-1"><i class="bi bi-info-circle me-1"></i>Chi tiết kỹ thuật trong <code>logs/app.log</code></div>
-                            {% elif error_type == 'BUSY' %}
-                            <div class="small text-secondary mt-1"><i class="bi bi-info-circle me-1"></i>Research đã dừng và không tự động thử lại để tiết kiệm hạn mức. Chi tiết trong <code>logs/app.log</code></div>
-                            <div class="mt-2 pt-2 border-top border-secondary-subtle d-flex align-items-center gap-2 flex-wrap">
-                                <button type="button" class="btn btn-sm btn-outline-warning fw-semibold" id="btnRetryFocus">
-                                    <i class="bi bi-arrow-clockwise me-1"></i>Thử Lại (Kiểm tra lại thông số)
-                                </button>
-                                {% if retry_after %}
-                                <span class="badge text-bg-warning-subtle text-warning border border-warning-subtle py-1 px-2" style="font-size: 0.78rem;" id="retryAfterBadge">
-                                    <i class="bi bi-clock me-1"></i>Gợi ý chờ: ~{{ retry_after }}s
-                                </span>
-                                {% endif %}
-                                <span class="small text-muted" style="font-size: 0.8rem;">Nhấn để xem lại biểu mẫu và điều chỉnh số lượng nếu muốn.</span>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endif %}
-
-                <form id="researchForm" method="POST" action="/research">
-                    <div class="mb-3">
-                        <label for="niche" class="form-label fw-bold">Ngành hàng / Niche:</label>
-                        <input type="text" class="form-control" id="niche" name="niche" value="{{ niche_val or '' }}" placeholder="Ví dụ: Đồ gia dụng thông minh, Đồ chơi công nghệ..." required>
-
-                        <!-- Local Niche Discovery Section (0 AI calls, 0 network calls) -->
-                        <div class="card bg-dark border border-secondary-subtle mt-2 mb-1" id="nicheDiscoveryCard">
-                            <div class="card-body p-2 p-md-3">
-                                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
-                                    <span class="fw-semibold text-info small d-flex align-items-center">
-                                        <i class="bi bi-compass me-1"></i>Gợi ý ngách nghiên cứu:
-                                    </span>
-                                    <div class="d-flex align-items-center gap-1">
-                                        <button type="button" class="btn btn-xs btn-outline-secondary text-secondary-emphasis" id="btnRandomNiches" title="Chọn ngẫu nhiên ngách từ danh mục cục bộ" style="font-size: 0.75rem; padding: 2px 8px;">
-                                            <i class="bi bi-shuffle me-1 text-info"></i>🎲 Gợi ý ngách khác
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <!-- Optional Local In-Memory Filter -->
-                                <div class="mb-2">
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text bg-dark border-secondary-subtle text-secondary py-0"><i class="bi bi-search" style="font-size: 0.75rem;"></i></span>
-                                        <input type="text" class="form-control form-control-sm bg-dark border-secondary-subtle text-light py-1" id="nicheSearchFilter" placeholder="Tìm nhanh ngách hoặc ngành hàng (ví dụ: bếp, mèo, xe, decor...)" autocomplete="off" style="font-size: 0.8rem;">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary d-none py-0" id="btnClearNicheSearch" title="Xóa tìm kiếm">&times;</button>
-                                    </div>
-                                </div>
-
-                                <!-- Broad Category Chips -->
-                                <div class="small text-muted mb-1" style="font-size: 0.75rem;">
-                                    Danh mục phổ biến:
-                                </div>
-                                <div class="d-flex align-items-center flex-wrap gap-1 mb-2" id="broadCategoryChips">
-                                    {% if broad_categories %}
-                                        {% for cat in broad_categories %}
-                                        <button type="button" 
-                                                class="btn btn-xs btn-outline-secondary category-chip {% if loop.index > 8 %}extra-category d-none{% endif %}" 
-                                                data-category="{{ cat }}"
-                                                style="font-size: 0.78rem; padding: 2px 8px;">
-                                            {{ cat }}
-                                        </button>
-                                        {% endfor %}
-                                        {% if broad_categories|length > 8 %}
-                                        <button type="button" class="btn btn-xs btn-link text-info text-decoration-none p-0 ms-1" id="btnToggleAllCategories" style="font-size: 0.78rem;">
-                                            + Xem tất cả ({{ broad_categories|length }})
-                                        </button>
-                                        {% endif %}
-                                    {% endif %}
-                                </div>
-
-                                <!-- Specific Niche Suggestions Container (Revealed upon category selection) -->
-                                <div id="specificNichesContainer" class="p-2 rounded bg-black bg-opacity-25 border border-secondary-subtle mt-2 d-none">
-                                    <div class="d-flex align-items-center justify-content-between mb-2">
-                                        <span class="small fw-semibold text-light d-flex align-items-center" id="specificNichesTitle">
-                                            <i class="bi bi-tag-fill me-1 text-info"></i>
-                                            <span id="specificCategoryName">Gợi ý cụ thể</span>
-                                        </span>
-                                        <span class="badge bg-secondary-subtle text-secondary" style="font-size: 0.7rem;">Click để điền</span>
-                                    </div>
-                                    <div class="d-flex align-items-center flex-wrap gap-1" id="specificNichesList">
-                                        <!-- Populated dynamically via local JavaScript -->
-                                    </div>
-                                </div>
-
-                                <!-- Rotating Random Discovery Suggestions Container -->
-                                <div id="randomNichesContainer" class="p-2 rounded bg-black bg-opacity-25 border border-secondary-subtle mt-2">
-                                    <div class="d-flex align-items-center justify-content-between mb-1">
-                                        <span class="small fw-semibold text-light" style="font-size: 0.78rem;">
-                                            <i class="bi bi-stars me-1 text-warning"></i>Ngách tiềm năng nổi bật:
-                                        </span>
-                                        <button type="button" class="btn btn-link text-info p-0 text-decoration-none" id="btnRefreshRandom" style="font-size: 0.75rem;">
-                                            <i class="bi bi-arrow-repeat me-1"></i>Đổi gợi ý
-                                        </button>
-                                    </div>
-                                    <div class="d-flex align-items-center flex-wrap gap-1" id="randomNichesList">
-                                        <!-- Populated dynamically via local JavaScript from local catalog -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- Safe JSON Data Block: Uses Jinja2's tojson escaping to guarantee breakout/XSS safety -->
-                        <script id="nicheCatalogData" type="application/json">{{ niche_catalog | tojson }}</script>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="productCount" class="form-label fw-bold">Số lượng sản phẩm (1–50):</label>
-                        <div class="input-group mb-2">
-                            <input type="number" 
-                                   class="form-control" 
-                                   id="productCount" 
-                                   name="product_count" 
-                                   min="1" 
-                                   max="50" 
-                                   step="1" 
-                                   value="{{ product_count_val or 10 }}" 
-                                   placeholder="10"
-                                   required>
-                            <span class="input-group-text text-secondary">sản phẩm</span>
-                        </div>
-                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
-                            <span class="text-secondary small me-1">Gợi ý nhanh:</span>
-                            {% for preset in [5, 10, 20, 30, 50] %}
-                            <button type="button" 
-                                    class="btn btn-sm btn-outline-info btn-preset {% if product_count_val|string == preset|string %}active{% endif %}" 
-                                    data-count="{{ preset }}"
-                                    id="presetBtn{{ preset }}">
-                                {{ preset }}
-                            </button>
-                            {% endfor %}
-                        </div>
-                        <div class="form-text text-secondary small" id="productCountAdvisory">
-                            <i class="bi bi-info-circle me-1"></i>Yêu cầu nhiều sản phẩm hơn có thể cần nhiều token và thời gian xử lý hơn.
-                        </div>
-                    </div>
-
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="freshResearch" name="fresh" value="true" {% if fresh_val %}checked{% endif %}>
-                        <label class="form-check-label text-secondary small" for="freshResearch">
-                            <strong>Tạo kết quả mới (Bỏ qua bộ nhớ đệm / Fresh Research)</strong>
-                            <span class="d-block text-muted" style="font-size: 0.8rem;">Nếu bỏ chọn, hệ thống tái sử dụng sản phẩm đã lưu cho ngành hàng này mà không tốn lượt gọi AI.</span>
-                        </label>
-                    </div>
-
-                    <!-- Truthful Workflow Progress Component -->
-                    <div id="researchProgressCard" class="card bg-dark border border-info-subtle mb-3 d-none">
-                        <div class="card-body p-3">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="fw-semibold text-white small d-flex align-items-center" id="progressStageTitle">
-                                    <span class="spinner-border spinner-border-sm text-info me-2" id="progressSpinner"></span>
-                                    <span id="progressStageText">Chuẩn bị nghiên cứu...</span>
-                                </span>
-                                <span class="badge bg-info-subtle text-info fw-bold" id="progressPercentBadge">0%</span>
-                            </div>
-                            <div class="progress mb-2" style="height: 10px; background-color: #1e293b;">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" 
-                                     role="progressbar" 
-                                     id="researchProgressBar" 
-                                     style="width: 0%;" 
-                                     aria-valuenow="0" 
-                                     aria-valuemin="0" 
-                                     aria-valuemax="100">
-                                </div>
-                            </div>
-                            <div class="small text-secondary" id="progressDetailText">
-                                Đang chuẩn bị gửi yêu cầu...
-                            </div>
-                            <div class="small text-muted mt-2 border-top border-secondary-subtle pt-2" style="font-size: 0.75rem;">
-                                <i class="bi bi-shield-lock-fill me-1 text-info"></i>
-                                <strong>Bảo vệ Invariant:</strong> Mỗi lượt chạy gửi đúng 1 yêu cầu duy nhất tới {{ provider_info.provider_name }}. Vui lòng không đóng trang.
-                            </div>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" id="btnRunResearch">
-                        <i class="bi bi-stars me-1"></i>
-                        <span id="btnRunResearchLabel">RUN RESEARCH (Chạy nghiên cứu)</span>
-                        <span id="btnRunResearchSpinner" class="spinner-border spinner-border-sm ms-2 d-none"></span>
-                    </button>
-                </form>
-            </div>
+<!-- Primary Research Intake Surface (Spans 100% available width) -->
+<div class="search-surface mb-4">
+    <!-- Active Provider Status Bar -->
+    <div id="researchProviderStatusBox" class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 pb-2 border-bottom border-dark-subtle">
+        <div class="d-flex align-items-center gap-2">
+            <span class="status-dot dot-info" id="researchStatusDot"></span>
+            <span class="fw-semibold small text-white" id="researchProviderName">{{ provider_info.provider_name if provider_info else 'AI Provider' }}</span>
+            <span class="status-pill" id="researchModelBadge">{{ provider_info.model if provider_info else 'N/A' }}</span>
+            <span class="small text-secondary" id="researchStatusMsg">{{ provider_info.status_msg if provider_info else 'Sẵn sàng' }}</span>
+        </div>
+        <div class="small text-muted" id="researchStatusHint">
+            {{ provider_info.status_hint if provider_info else 'BYOK Invariant: 1 call / run' }}
         </div>
     </div>
 
-    <div class="col-lg-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="bi bi-info-circle me-2 text-info"></i>Hướng Dẫn & Quy Tắc Tiết Kiệm (Low-Consumption)
+    {% if error %}
+    <div class="calm-banner {% if error_type == 'QUOTA_EXCEEDED' or error_type == 'BUSY' or error_type == 'RATE_LIMITED' %}calm-warning{% else %}calm-danger{% endif %} mb-3 d-flex justify-content-between align-items-start" role="alert">
+        <div class="d-flex align-items-start gap-2">
+            <i class="bi {% if error_type == 'QUOTA_EXCEEDED' or error_type == 'BUSY' %}bi-hourglass-split{% else %}bi-exclamation-triangle-fill{% endif %} mt-1"></i>
+            <div>
+                <div class="fw-semibold">
+                    {% if error_title %}
+                        {{ error_title }}
+                    {% elif error_type == 'QUOTA_EXCEEDED' %}
+                        {{ provider_info.provider_name if provider_info else 'AI' }} đã hết hạn mức API / quota
+                    {% elif error_type == 'BUSY' %}
+                        {{ provider_info.provider_name if provider_info else 'AI' }} đang quá tải
+                    {% else %}
+                        Lỗi {{ provider_info.provider_name if provider_info else 'AI' }}
+                    {% endif %}
+                </div>
+                <div class="mt-1 small">{{ error }}</div>
+                {% if error_type == 'BUSY' %}
+                <div class="mt-2 d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="btnRetryFocus">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Kiểm tra lại thông số
+                    </button>
+                    {% if retry_after %}
+                    <span class="status-pill">Gợi ý chờ: ~{{ retry_after }}s</span>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
-            <div class="card-body">
-                <ul class="text-secondary small mb-0">
-                    <li class="mb-2"><strong class="text-white">Quy tắc 1 Yêu cầu DUY NHẤT:</strong> Mỗi lần bấm chạy chỉ gửi đúng 1 yêu cầu duy nhất tới {{ provider_info.provider_name if provider_info else 'AI Provider' }}. Không tự động thử lại vô tận, không tự động fallback model phụ làm tốn thêm hạn mức.</li>
-                    <li class="mb-2"><strong class="text-white">Bộ nhớ đệm thông minh:</strong> Tự động tái sử dụng kết quả đã nghiên cứu trước đó nếu cùng ngành hàng (0 lượt gọi AI tốn thêm).</li>
-                    <li class="mb-2"><strong class="text-white">{{ provider_info.provider_name if provider_info else 'AI Provider' }}</strong> tự động phân tích và tạo: Tên tiếng Việt, Tên tiếng Trung chuẩn thương mại, Từ khóa tìm kiếm tự nhiên trên Douyin, Góc nội dung (Content Angle) và Câu giật tít mở đầu (Hook).</li>
-                    <li class="mb-2"><strong class="text-white">Mã sản phẩm</strong> được đánh số tự động dạng: <code class="text-info">P0001</code>, <code class="text-info">P0002</code>...</li>
-                    <li>Sau khi tạo, các sản phẩm sẽ được lưu vào cơ sở dữ liệu SQLite và sẵn sàng cho bước tìm kiếm Douyin.</li>
-                </ul>
+        </div>
+        <button type="button" class="btn-close btn-close-white small" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <form id="researchForm" method="POST" action="/research">
+        <!-- Row 1: Primary Controls -->
+        <div class="row g-2 align-items-end mb-2">
+            <div class="col-lg-7 col-md-6 col-12">
+                <label for="niche" class="form-label small text-muted mb-1 fw-medium">Ngành hàng / Niche</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="niche" name="niche" value="{{ niche_val or '' }}" placeholder="Ví dụ: Đồ gia dụng thông minh, Đồ chơi công nghệ..." required>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3 col-6">
+                <label for="productCount" class="form-label small text-muted mb-1 fw-medium">Số lượng</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" id="productCount" name="product_count" min="1" max="50" step="1" value="{{ product_count_val or 10 }}" required>
+                    <span class="input-group-text">mục</span>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-3 col-6 d-flex gap-2">
+                <button type="submit" class="btn btn-primary w-100 fw-medium text-nowrap" id="btnRunResearch">
+                    <span id="btnRunResearchSpinner" class="spinner-border spinner-border-sm me-1 d-none"></span>
+                    <span id="btnRunResearchLabel"><i class="bi bi-magic me-1"></i> Nghiên cứu</span>
+                </button>
+                <button type="button" class="btn btn-ghost text-secondary text-nowrap" id="btnToggleResearchOptions" onclick="toggleResearchOptions()">
+                    Tùy chọn <i class="bi bi-chevron-down ms-1" id="researchOptionsChevron"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Row 2: Preset Quick Selector & Advisory -->
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-1 mb-2">
+            <div class="d-flex align-items-center gap-1 flex-wrap">
+                <span class="small text-muted me-1">Gợi ý số lượng:</span>
+                {% for preset in [5, 10, 20, 30, 50] %}
+                <button type="button" class="btn btn-sm btn-ghost btn-preset {% if product_count_val|string == preset|string %}active{% endif %}" data-count="{{ preset }}" id="presetBtn{{ preset }}">
+                    {{ preset }}
+                </button>
+                {% endfor %}
+            </div>
+            <div class="small text-muted" id="productCountAdvisory">
+                <i class="bi bi-shield-check me-1 text-info"></i>1 lượt gọi duy nhất tới {{ provider_info.provider_name if provider_info else 'AI' }}
+            </div>
+        </div>
+
+        <!-- Row 3: Collapsible Secondary Options (Tùy chọn ngách & bộ nhớ đệm) -->
+        <div id="researchSecondaryOptions" class="d-none mt-3 pt-3 border-top border-dark-subtle">
+            <!-- Fresh Cache Toggle -->
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="freshResearch" name="fresh" value="true" {% if fresh_val %}checked{% endif %}>
+                <label class="form-check-label text-secondary small" for="freshResearch">
+                    <strong class="text-white">Tạo kết quả mới (Bỏ qua bộ nhớ đệm)</strong>
+                    <span class="d-block text-muted" style="font-size: 0.8rem;">Nếu không chọn, hệ thống ưu tiên tái sử dụng sản phẩm đã lưu cho ngành hàng này mà không tốn lượt gọi AI.</span>
+                </label>
+            </div>
+
+            <!-- Local Niche Discovery Section (0 AI calls, 0 network calls) -->
+            <div class="p-3 rounded" style="background-color: var(--bg-surface-elevated); border: 1px solid var(--border-subtle);" id="nicheDiscoveryCard">
+                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                    <span class="fw-semibold small text-white d-flex align-items-center">
+                        <i class="bi bi-compass me-1 text-info"></i>Gợi ý ngách nghiên cứu (Dữ liệu cục bộ):
+                    </span>
+                    <button type="button" class="btn btn-ghost btn-sm text-secondary" id="btnRandomNiches" title="Chọn ngẫu nhiên ngách từ danh mục cục bộ">
+                        <i class="bi bi-shuffle me-1 text-info"></i>Đổi ngách ngẫu nhiên
+                    </button>
+                </div>
+
+                <!-- Quick Filter Input -->
+                <div class="mb-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text py-0"><i class="bi bi-search" style="font-size: 0.75rem;"></i></span>
+                        <input type="text" class="form-control form-control-sm py-1" id="nicheSearchFilter" placeholder="Tìm nhanh ngách hoặc danh mục..." autocomplete="off">
+                        <button type="button" class="btn btn-sm btn-outline-secondary d-none py-0" id="btnClearNicheSearch" title="Xóa">&times;</button>
+                    </div>
+                </div>
+
+                <!-- Broad Category Chips -->
+                <div class="small text-muted mb-1" style="font-size: 0.75rem;">Danh mục phổ biến:</div>
+                <div class="d-flex align-items-center flex-wrap gap-1 mb-2" id="broadCategoryChips">
+                    {% if broad_categories %}
+                        {% for cat in broad_categories %}
+                        <button type="button" 
+                                class="category-chip {% if loop.index > 8 %}extra-category d-none{% endif %}" 
+                                data-category="{{ cat }}">
+                            {{ cat }}
+                        </button>
+                        {% endfor %}
+                        {% if broad_categories|length > 8 %}
+                        <button type="button" class="btn btn-sm btn-ghost text-info p-0 ms-1" id="btnToggleAllCategories" style="font-size: 0.78rem;">
+                            + Xem tất cả ({{ broad_categories|length }})
+                        </button>
+                        {% endif %}
+                    {% endif %}
+                </div>
+
+                <!-- Specific Niches Suggestions Container -->
+                <div id="specificNichesContainer" class="p-2 rounded mt-2 d-none" style="background-color: var(--bg-surface); border: 1px solid var(--border-subtle);">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="small fw-semibold text-white" id="specificNichesTitle">
+                            <i class="bi bi-tag me-1 text-info"></i>
+                            <span id="specificCategoryName">Gợi ý cụ thể</span>
+                        </span>
+                        <span class="small text-muted" style="font-size: 0.7rem;">Click để điền</span>
+                    </div>
+                    <div class="d-flex align-items-center flex-wrap gap-1" id="specificNichesList"></div>
+                </div>
+
+                <!-- Random Niches Container -->
+                <div id="randomNichesContainer" class="p-2 rounded mt-2" style="background-color: var(--bg-surface); border: 1px solid var(--border-subtle);">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="small fw-semibold text-white" style="font-size: 0.78rem;">
+                            <i class="bi bi-stars me-1 text-warning"></i>Ngách nổi bật:
+                        </span>
+                        <button type="button" class="btn btn-sm btn-ghost text-info p-0" id="btnRefreshRandom" style="font-size: 0.75rem;">
+                            <i class="bi bi-arrow-repeat me-1"></i>Đổi gợi ý
+                        </button>
+                    </div>
+                    <div class="d-flex align-items-center flex-wrap gap-1" id="randomNichesList"></div>
+                </div>
+            </div>
+            <script id="nicheCatalogData" type="application/json">{{ niche_catalog | tojson }}</script>
+        </div>
+
+        <!-- Truthful Workflow Progress UX (Honest inline status) -->
+        <div id="researchProgressCard" class="calm-banner calm-info mt-3 d-none">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+                <span class="fw-semibold small text-white d-flex align-items-center" id="progressStageTitle">
+                    <span class="spinner-border spinner-border-sm text-info me-2" id="progressSpinner"></span>
+                    <span id="progressStageText">Đang chuẩn bị gửi yêu cầu...</span>
+                </span>
+                <span class="status-pill" id="progressPercentBadge">1 call</span>
+            </div>
+            <div class="progress mb-2" style="height: 6px; background-color: var(--border-subtle);">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" 
+                     role="progressbar" 
+                     id="researchProgressBar" 
+                     style="width: 100%;">
+                </div>
+            </div>
+            <div class="small text-secondary" id="progressDetailText">
+                Đang gửi yêu cầu duy nhất tới {{ provider_info.provider_name if provider_info else 'AI' }}. Vui lòng không đóng trang.
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Low Consumption & Architecture Invariants Overview -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-check me-2 text-info"></i>Quy tắc tiết kiệm hạn mức (Low-Consumption Protocol)</span>
+        <span class="small text-secondary">Phase 3 Invariant Protected</span>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 text-secondary small">
+            <div class="col-md-4">
+                <div class="fw-semibold text-white mb-1"><i class="bi bi-1-circle me-1 text-primary"></i> 1 Yêu Cầu Duy Nhất</div>
+                <div>Mỗi lần chạy chỉ gửi đúng 1 yêu cầu duy nhất tới {{ provider_info.provider_name if provider_info else 'AI' }}. Không retry vô tận, không fallback tự động gây tốn thêm hạn ngạch.</div>
+            </div>
+            <div class="col-md-4">
+                <div class="fw-semibold text-white mb-1"><i class="bi bi-hdd me-1 text-info"></i> Bộ Nhớ Đệm Thông Minh</div>
+                <div>Tự động tái sử dụng kết quả đã lưu trong SQLite cho cùng ngành hàng khi không chọn "Bỏ qua bộ nhớ đệm" (0 lượt gọi AI tốn thêm).</div>
+            </div>
+            <div class="col-md-4">
+                <div class="fw-semibold text-white mb-1"><i class="bi bi-file-earmark-check me-1 text-success"></i> Tự Động Định Dạng</div>
+                <div><strong class="text-white">{{ provider_info.provider_name if provider_info else 'AI Provider' }}</strong> tự động phân tích và tạo: Tên tiếng Việt, Tên tiếng Trung chuẩn thương mại, Từ khóa tìm kiếm tự nhiên trên Douyin, Góc nội dung (Content Angle) và Câu giật tít mở đầu (Hook).</div>
             </div>
         </div>
     </div>
@@ -319,6 +298,15 @@
 
 {% block extra_scripts %}
 <script>
+window.toggleResearchOptions = function() {
+    const sec = document.getElementById('researchSecondaryOptions');
+    const chev = document.getElementById('researchOptionsChevron');
+    if (!sec) return;
+    const isHidden = sec.classList.contains('d-none');
+    sec.classList.toggle('d-none', !isHidden);
+    if (chev) chev.className = isHidden ? 'bi bi-chevron-up ms-1' : 'bi bi-chevron-down ms-1';
+};
+
 (function() {
     const STATUS_COLORS = {
         READY:          '#22c55e',

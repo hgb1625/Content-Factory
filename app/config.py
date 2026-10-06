@@ -549,5 +549,25 @@ def get_active_ai_model(db=None) -> str:
     return normalize_model_name(pid, m)
 
 
+def get_serpapi_api_key(db=None) -> str:
+    """
+    Single source of truth for SerpApi API Key (Optional: Douyin search without login).
+    Priority:
+    1. SQLite settings table ('serpapi_api_key' or 'SERPAPI_API_KEY') if present.
+    2. Environment variable SERPAPI_API_KEY in .env.
+    """
+    if db is not None:
+        try:
+            from app.models import Setting
+            rec = db.query(Setting).filter(Setting.key.in_(["serpapi_api_key", "SERPAPI_API_KEY"])).first()
+            if rec and rec.value and rec.value.strip():
+                return rec.value.strip()
+        except Exception as e:
+            logger.debug(f"Could not read serpapi api_key from db: {e}")
+
+    load_dotenv(dotenv_path=ENV_FILE, override=True)
+    return os.getenv("SERPAPI_API_KEY", "").strip()
+
+
 
 

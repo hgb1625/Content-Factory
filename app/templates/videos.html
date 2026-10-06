@@ -1,17 +1,26 @@
 {% extends "base.html" %}
 
 {% block title %}Videos - AI Content Factory{% endblock %}
-{% block page_title %}Tất Cả Video (Videos List){% endblock %}
+{% block page_title %}{% endblock %}
 
 {% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-baseline mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1 text-white fw-semibold">Kho Video</h4>
+        <p class="text-secondary small mb-0">Quản lý toàn bộ video đã thu thập và tải về ({{ videos|length }} video)</p>
+    </div>
+    <div>
+        <a href="/review" class="btn btn-primary btn-sm">
+            <i class="bi bi-check2-square me-1"></i> Review Queue
+        </a>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-camera-video me-2 text-info"></i>Kho Video Tổng ({{ videos|length }})</span>
-        <div class="d-flex gap-2">
-            <a href="/review" class="btn btn-sm btn-outline-primary">
-                <i class="bi bi-check2-square me-1"></i> Hàng đợi duyệt (Review Queue)
-            </a>
-        </div>
+        <span><i class="bi bi-camera-video me-2 text-info"></i>Danh sách video</span>
+        <span class="status-pill">{{ videos|length }} video</span>
     </div>
     <div class="card-body p-0">
         {% if videos %}
@@ -31,19 +40,19 @@
                 <tbody>
                     {% for v in videos %}
                     <tr>
-                        <td class="fw-bold text-white">{{ v.video_id }}</td>
+                        <td class="fw-semibold text-white">{{ v.video_id }}</td>
                         <td>{{ v.product.name_vietnamese if v.product else '-' }}</td>
                         <td>
-                            <a href="{{ v.douyin_url }}" target="_blank" class="text-truncate d-inline-block text-decoration-none" style="max-width: 250px;">
+                            <a href="{{ v.douyin_url }}" target="_blank" class="text-truncate d-inline-block text-decoration-none" style="max-width: 280px;">
                                 {{ v.douyin_url }}
                             </a>
                         </td>
                         <td>{{ v.views or '-' }}</td>
                         <td>
                             {% if v.downloaded %}
-                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-lg"></i> Có</span>
+                            <span class="status-pill"><span class="status-dot dot-success"></span> Có</span>
                             {% else %}
-                            <span class="badge bg-secondary-subtle text-secondary">Chưa</span>
+                            <span class="status-pill"><span class="status-dot dot-muted"></span> Chưa</span>
                             {% endif %}
                         </td>
                         <td><span class="badge badge-status status-{{ v.status }}">{{ v.status }}</span></td>
@@ -54,9 +63,10 @@
             </table>
         </div>
         {% else %}
-        <div class="p-5 text-center text-secondary">
-            <i class="bi bi-camera-video fs-1 d-block mb-3"></i>
-            Chưa có video nào trong hệ thống.
+        <div class="empty-state-light">
+            <div class="empty-state-icon"><i class="bi bi-camera-video"></i></div>
+            <div class="empty-state-title">Chưa có video nào</div>
+            <div class="empty-state-desc">Hãy bắt đầu tìm kiếm và duyệt video tại <a href="/review" class="text-primary text-decoration-none">Review Queue</a>!</div>
         </div>
         {% endif %}
     </div>

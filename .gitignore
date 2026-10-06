@@ -32,6 +32,7 @@ logs/
 temp/
 test_outputs/
 scratch/
+runtime/
 
 # Media & Audio/Video files
 *.mp4
